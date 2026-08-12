@@ -44,10 +44,11 @@ mkdir -p "$SRC"
 # 200 MB of JUCE.
 git archive HEAD | tar -x -C "$SRC"
 
-# The .bat lives at the bundle root too, so "extract and double-click" works
-# without opening any folder.
-cp "$ROOT/packaging/BUILD-ME-FIRST.txt" "$SRC/"
-cp "$ROOT/packaging/build-windows.bat" "$SRC/"
+# The FOUR COLOR delivery set, at the bundle root: one .bat that checks,
+# builds, installs and verifies as administrator, reusing the shared
+# %USERPROFILE%\JUCE so nothing downloads twice.
+cp "$ROOT/packaging/README-WINDOWS.txt" "$SRC/"
+cp "$ROOT/packaging/INSTALL-ORCHA-BUILD.bat" "$SRC/"
 cp "$ROOT/packaging/UNINSTALL-ORCHA.bat" "$SRC/"
 
 ZIP="$DIST/ORCHA-$VERSION-windows-src.zip"
