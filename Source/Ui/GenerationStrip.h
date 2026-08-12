@@ -1,0 +1,41 @@
+#pragma once
+
+#include "Theme.h"
+#include "../Engine/Pattern.h"
+
+namespace orcha
+{
+
+// The single generation strip: section, family, three macros, length, and the
+// one primary action.
+class GenerationStrip : public juce::Component
+{
+public:
+    GenerationStrip();
+
+    std::function<void()> onSettingsChanged;   // any control moved
+    std::function<void()> onGenerate;
+
+    void setSettings (const GeneratorSettings& s);
+    GeneratorSettings getSettings() const;
+    void setGenerateEnabled (bool enabled, bool busy);
+
+    void paint (juce::Graphics&) override;
+    void resized() override;
+
+private:
+    void wireToggleGroup (std::vector<juce::TextButton*> group, int radioId);
+    void changed() { if (onSettingsChanged) onSettingsChanged(); }
+
+    juce::TextButton dropButton { "DROP" }, breakButton { "BREAK" },
+                     buildButton { "BUILD" }, grooveButton { "GROOVE" };
+    juce::TextButton edmChip { "EDM" }, arabicChip { "ARABIC" },
+                     medChip { "MEDITERRANEAN" }, afroChip { "AFRO" }, hybridChip { "HYBRID" };
+    juce::Slider energyKnob, densityKnob, randomnessKnob;
+    juce::TextButton bars1 { "1 BAR" }, bars2 { "2 BARS" }, bars4 { "4 BARS" };
+    juce::TextButton generateButton { "GENERATE LOOPS" };
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (GenerationStrip)
+};
+
+} // namespace orcha

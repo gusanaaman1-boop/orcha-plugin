@@ -1,0 +1,7 @@
+#pragma once
+
+// Build identity, configured by CMake. The git description identifies the
+// exact build; the version alone cannot.
+#define ORCHA_VERSION_STRING "@ORCHA_VERSION@"
+#define ORCHA_GIT_DESCRIBE   "@ORCHA_GIT_DESCRIBE@"
+#define ORCHA_BUILD_DATE     "@ORCHA_BUILD_DATE@"
