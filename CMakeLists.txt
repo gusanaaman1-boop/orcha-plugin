@@ -12,8 +12,12 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # JUCE lives outside this tree - the same ~/JUCE checkout (JUCE 9) every plugin
-# in this workspace uses. CI would check JUCE out into ./JUCE instead.
-if(DEFINED ENV{HOME} AND EXISTS "$ENV{HOME}/JUCE/CMakeLists.txt")
+# in this workspace uses. The Windows source bundle clones a pinned JUCE into
+# ./JUCE and passes ORCHA_JUCE_DIR_OVERRIDE so that pin beats any stray
+# %USERPROFILE%\JUCE from another project.
+if(DEFINED ORCHA_JUCE_DIR_OVERRIDE AND EXISTS "${ORCHA_JUCE_DIR_OVERRIDE}/CMakeLists.txt")
+    set(ORCHA_JUCE_DIR "${ORCHA_JUCE_DIR_OVERRIDE}")
+elseif(DEFINED ENV{HOME} AND EXISTS "$ENV{HOME}/JUCE/CMakeLists.txt")
     set(ORCHA_JUCE_DIR "$ENV{HOME}/JUCE")
 elseif(DEFINED ENV{USERPROFILE} AND EXISTS "$ENV{USERPROFILE}/JUCE/CMakeLists.txt")
     set(ORCHA_JUCE_DIR "$ENV{USERPROFILE}/JUCE")
