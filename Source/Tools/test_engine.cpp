@@ -1721,6 +1721,35 @@ int main()
         }
     }
 
+    // === F1: the pump =============================================================
+    {
+        LoopRenderer::Context ctx;
+        ctx.sampleRate = sr;
+        ctx.bpm = 124.0;
+        ctx.samples = { makeHit (100.0, sr, 0.3), makeHit (800.0, sr, 0.2),
+                        makeHit (4000.0, sr, 0.15) };
+        ctx.roleMap = SampleAnalyzer::assignRoles (ctx.samples);
+        GeneratorSettings s;
+        auto dry = PatternValidator::validate (LoopGenerator::generateV2 (31, 32, s));
+        auto pumped = dry;
+        pumped.fxPump = 1.0f;
+        const auto a = LoopRenderer::render (dry, ctx);
+        const auto b = LoopRenderer::render (pumped, ctx);
+        const auto b2 = LoopRenderer::render (pumped, ctx);
+        bool differs = false, sameTwice = true;
+        for (int i = 0; i < a.getNumSamples(); i += 37)
+        {
+            differs = differs || a.getSample (0, i) != b.getSample (0, i);
+            sameTwice = sameTwice && b.getSample (0, i) == b2.getSample (0, i);
+        }
+        check (differs, "the pump audibly ducks");
+        check (sameTwice, "the pump is deterministic");
+        check (b.getNumSamples() == a.getNumSamples(), "the pump keeps the length");
+        check (b.getMagnitude (0, b.getNumSamples())
+                   <= juce::Decibels::decibelsToGain (-1.0f) + 1.0e-4f,
+               "the pump honors the ceiling");
+    }
+
     std::cout << (failures == 0 ? "ALL OK" : "FAILED") << " - "
               << checks << " checks, " << failures << " failures\n";
     return failures == 0 ? 0 : 1;

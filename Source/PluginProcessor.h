@@ -34,6 +34,7 @@ public:
         bool edited = false;            // user edits win over the generator
         float fxReverb = 0.0f;          // card-level polish amounts (0 = off),
         float fxDelay = 0.0f;           // survive regeneration
+        float fxPump = 0.0f;
         int endingOverride = -1;        // -1 = AUTO, else forced Destination
     };
 
@@ -60,6 +61,13 @@ public:
     void generateSet();
     // Phase B5 - export every present card as WAV + MIDI + manifest.json.
     bool exportAll (const juce::File& directory);
+    // Phase B3 - turn card `index` into a transition INTO card `target`:
+    // same motif, half length, ending derived from the target's section and
+    // the tension delta. Lands as an edit, so RESET restores the original.
+    void makeTransition (int index, int target);
+    // Phase B4 - render every FAVORITED card, in slot order, into one
+    // seamless chain WAV; returns the file (invalid if <2 favorites).
+    juce::File ensureChainWav();
     // Variation: keeps the card's motif seed (same groove) and re-rolls only
     // the ornament seed. A card that was never generated gets both fresh.
     // Discards manual edits - a fresh take starts from the generator.
@@ -73,7 +81,7 @@ public:
     void resetOptionEdits (int index);
     // Baked-in reverb/delay amounts (0..1) for one card; re-renders the same
     // pattern without regenerating it.
-    void setOptionFx (int index, float reverb, float delay);
+    void setOptionFx (int index, float reverb, float delay, float pump);
     // A7 - CLEAN: strip decoration at strength 1..3. Deterministic, becomes
     // a user edit (RESET restores the generated take).
     void cleanOption (int index, int strength);

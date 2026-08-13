@@ -239,6 +239,42 @@ juce::AudioBuffer<float> LoopRenderer::render (const Pattern& pattern, const Con
     // pass, so the ceiling still holds with the effect in.
     applyLoopFx (out, ctx.sampleRate, ctx.bpm, pattern.fxReverb, pattern.fxDelay);
 
+    // F1: the pump. A gain envelope carved by the loop's own LOW hits -
+    // deterministic, click-free, sample-rate independent. Depth follows the
+    // amount; attack is instant-but-smoothed, release ~140 ms curve.
+    if (pattern.fxPump > 0.01f)
+    {
+        const float depth = juce::jlimit (0.0f, 1.0f, pattern.fxPump) * 0.8f;
+        const int releaseLen = (int) (ctx.sampleRate * 0.14);
+        const int attackLen = juce::jmax (8, (int) (ctx.sampleRate * 0.004));
+        std::vector<float> env ((size_t) loopLen, 1.0f);
+        for (const auto& e : pattern.events)
+        {
+            if (e.role != Role::LOW || e.velocity < 0.5f)
+                continue;
+            const int at = (int) (e.pos * stepSec * ctx.sampleRate);
+            for (int i = 0; i < attackLen + releaseLen; ++i)
+            {
+                const int idx = (at + i) % loopLen;   // wraps: the loop pumps seamlessly
+                float g;
+                if (i < attackLen)
+                    g = 1.0f - depth * (float) i / (float) attackLen;
+                else
+                {
+                    const float t = (float) (i - attackLen) / (float) releaseLen;
+                    g = 1.0f - depth * (1.0f - t) * (1.0f - t);
+                }
+                env[(size_t) idx] = juce::jmin (env[(size_t) idx], g);
+            }
+        }
+        for (int ch = 0; ch < 2; ++ch)
+        {
+            float* d = out.getWritePointer (ch);
+            for (int i = 0; i < loopLen; ++i)
+                d[i] *= env[(size_t) i];
+        }
+    }
+
     // Headroom: one clean gain to keep the true peak at or below -1 dBFS.
     const float peak = out.getMagnitude (0, loopLen);
     const float ceiling = juce::Decibels::decibelsToGain (-1.0f);

@@ -98,6 +98,13 @@ OrchaAudioProcessorEditor::OrchaAudioProcessorEditor (OrchaAudioProcessor& p)
     };
     addAndMakeVisible (exportAllButton);
 
+    // B4: drag the favorited cards, in slot order, as ONE seamless WAV.
+    chainButton.setColour (juce::TextButton::buttonColourId, theme::panel);
+    chainButton.setColour (juce::TextButton::textColourOffId, theme::amber);
+    chainButton.setTooltip ("Favorite 2+ cards, then drag this button into your DAW: one chained WAV");
+    chainButton.addMouseListener (this, false);
+    addAndMakeVisible (chainButton);
+
     processor.onModelChanged = [this] { refresh(); };
     // Fast tick for the playhead bar; the full model refresh runs on every
     // eighth tick (~260 ms), same cadence as before.
@@ -259,6 +266,8 @@ void OrchaAudioProcessorEditor::resized()
     auto bottom = area.removeFromBottom (40).reduced (12, 5);
     exportAllButton.setBounds (bottom.removeFromRight (120));
     bottom.removeFromRight (8);
+    chainButton.setBounds (bottom.removeFromRight (120));
+    bottom.removeFromRight (8);
     generateMoreButton.setBounds (bottom);
 
     auto grid = area.reduced (12, 2);
@@ -272,6 +281,15 @@ void OrchaAudioProcessorEditor::resized()
                                          grid.getY() + (i / cols) * h, w, h);
         optionCards[(size_t) i]->setBounds (cell.reduced (5, 4));
     }
+}
+
+void OrchaAudioProcessorEditor::mouseDrag (const juce::MouseEvent& e)
+{
+    if (e.eventComponent != &chainButton || e.getDistanceFromDragStart() < 8)
+        return;
+    const auto file = processor.ensureChainWav();
+    if (file.existsAsFile())
+        performExternalDragDropOfFiles ({ file.getFullPathName() }, false);
 }
 
 bool OrchaAudioProcessorEditor::isInterestedInFileDrag (const juce::StringArray& files)

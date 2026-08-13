@@ -23,6 +23,7 @@ public:
 
     void paint (juce::Graphics&) override;
     void resized() override;
+    void mouseDrag (const juce::MouseEvent&) override;   // B4 chain drag
 
     // Drops anywhere on the window land in the first free sample slot.
     bool isInterestedInFileDrag (const juce::StringArray& files) override;
@@ -44,6 +45,7 @@ private:
     std::array<std::unique_ptr<OptionCard>, OrchaAudioProcessor::numOptions> optionCards;
     juce::TextButton generateMoreButton { "GENERATE MORE" };
     juce::TextButton exportAllButton { "EXPORT ALL" };
+    juce::TextButton chainButton { "DRAG CHAIN" };   // B4: favorites, in order
     std::unique_ptr<juce::FileChooser> exportChooser;
     PatternEditPanel editPanel;
     SampleEditPanel samplePanel;

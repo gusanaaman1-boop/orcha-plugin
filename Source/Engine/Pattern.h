@@ -139,6 +139,9 @@ struct Pattern
     // reverb and delay amounts (0 = off), chosen in the step editor.
     float fxReverb = 0.0f;
     float fxDelay = 0.0f;
+    // F1: sidechain-style pump derived from the LOW events themselves -
+    // a deterministic duck at every low hit, not a fake compressor.
+    float fxPump = 0.0f;
     std::vector<Event> events;
 
     int stepCount() const { return settings.bars * 16; }

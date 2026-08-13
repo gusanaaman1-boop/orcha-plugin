@@ -8,6 +8,7 @@
 #include "Engine/RenderCache.h"
 #include "Engine/MidiExporter.h"
 #include "Engine/MusicalScorer.h"
+#include "Engine/SilencePlanner.h"
 
 namespace orcha
 {
@@ -291,6 +292,91 @@ void OrchaAudioProcessor::resetOptionEdits (int index)
     enqueueBuild ({ index });
 }
 
+void OrchaAudioProcessor::makeTransition (int index, int target)
+{
+    if (index < 0 || index >= numOptions || target < 0 || target >= numOptions
+        || index == target)
+        return;
+    const auto& src = options[(size_t) index];
+    const auto& dst = options[(size_t) target];
+    if (! src.present || ! dst.present)
+        return;
+
+    // Read both sides: the target's section chooses the ending grammar, the
+    // tension delta chooses how hard the transition pushes.
+    const auto dstMode = dst.pattern.settings.mode;
+    const auto destination = dstMode == Mode::DROP ? Destination::ToDrop
+                           : dstMode == Mode::BREAK ? Destination::ToBreak
+                           : Destination::LoopBack;
+    auto tensionOf = [] (const Pattern& p)
+    {
+        float sum = 0.0f;
+        for (float t : TensionModel::measure (p))
+            sum += t;
+        return sum;
+    };
+    const float delta = tensionOf (dst.pattern) - tensionOf (src.pattern);
+
+    auto s = src.pattern.settings;
+    s.bars = juce::jmax (1, s.bars / 2);          // a transition is shorter
+    s.energy = juce::jlimit (0.0f, 1.0f, s.energy + juce::jlimit (-0.25f, 0.35f,
+                                                                  delta * 0.5f));
+    // Same motif = recognizable source material; the ornament stream is
+    // derived from BOTH cards, so the fill belongs to the pair.
+    auto transition = LoopGenerator::generateV2 (
+        src.pattern.seed,
+        LoopGenerator::deriveSeed (src.pattern.ornamentSeed ^ dst.pattern.seed, 13),
+        s, deriveTraits (samples, roleMap), destination);
+    transition = PatternValidator::validate (std::move (transition));
+    transition.name = src.pattern.name + ">" + juce::String (target + 1);
+    transition.fxReverb = src.pattern.fxReverb;
+    transition.fxDelay = src.pattern.fxDelay;
+    transition.fxPump = src.pattern.fxPump;
+    applyEditedPattern (index, std::move (transition));
+}
+
+juce::File OrchaAudioProcessor::ensureChainWav()
+{
+    // The hearts define the chain: every favorited, ready card in slot
+    // order becomes one seamless phrase.
+    std::vector<const Option*> chain;
+    for (const auto& opt : options)
+        if (opt.favorite && opt.present && opt.ready && opt.loop != nullptr)
+            chain.push_back (&opt);
+    if (chain.size() < 2)
+        return {};
+
+    int total = 0;
+    for (auto* o : chain)
+        total += o->loop->buffer.getNumSamples();
+    juce::AudioBuffer<float> joined (2, total);
+    int at = 0;
+    juce::String id;
+    for (auto* o : chain)
+    {
+        for (int ch = 0; ch < 2; ++ch)
+            joined.copyFrom (ch, at, o->loop->buffer, ch, 0,
+                             o->loop->buffer.getNumSamples());
+        at += o->loop->buffer.getNumSamples();
+        id << juce::String::toHexString ((juce::int64) o->pattern.seed) << '_';
+    }
+    const auto file = RenderCache::cacheDirectory().getChildFile (
+        "ORCHA_CHAIN_" + juce::String::toHexString (id.hashCode64()) + ".wav");
+    if (file.existsAsFile())
+        return file;
+    juce::WavAudioFormat wav;
+    std::unique_ptr<juce::FileOutputStream> stream (file.createOutputStream());
+    if (stream == nullptr)
+        return {};
+    std::unique_ptr<juce::AudioFormatWriter> writer (
+        wav.createWriterFor (stream.get(), srAtomic.load(), 2, 24, {}, 0));
+    if (writer == nullptr)
+        return {};
+    stream.release();
+    writer->writeFromAudioSampleBuffer (joined, 0, joined.getNumSamples());
+    return file;
+}
+
 void OrchaAudioProcessor::cleanOption (int index, int strength)
 {
     if (index < 0 || index >= numOptions || ! options[(size_t) index].present)
@@ -329,13 +415,14 @@ void OrchaAudioProcessor::setOptionEnding (int index, int endingOverride)
     notifyModel();
 }
 
-void OrchaAudioProcessor::setOptionFx (int index, float reverb, float delay)
+void OrchaAudioProcessor::setOptionFx (int index, float reverb, float delay, float pump)
 {
     if (index < 0 || index >= numOptions)
         return;
     auto& opt = options[(size_t) index];
     opt.fxReverb = juce::jlimit (0.0f, 1.0f, reverb);
     opt.fxDelay = juce::jlimit (0.0f, 1.0f, delay);
+    opt.fxPump = juce::jlimit (0.0f, 1.0f, pump);
     if (! opt.present)
         return;
     // Same pattern, new polish: render as-is, no regeneration.
@@ -360,7 +447,7 @@ void OrchaAudioProcessor::enqueueBuild (std::vector<int> indices,
         juce::String name;
         bool useExisting = false;   // edited pattern: render as-is, no generate
         Pattern existing;
-        float fxReverb = 0.0f, fxDelay = 0.0f;    // card-level, survives regen
+        float fxReverb = 0.0f, fxDelay = 0.0f, fxPump = 0.0f;
         int endingOverride = -1;                  // A8: -1 AUTO
     };
     std::vector<BuildInput> inputs;
@@ -381,6 +468,7 @@ void OrchaAudioProcessor::enqueueBuild (std::vector<int> indices,
         }
         in.fxReverb = options[(size_t) i].fxReverb;
         in.fxDelay = options[(size_t) i].fxDelay;
+        in.fxPump = options[(size_t) i].fxPump;
         in.endingOverride = options[(size_t) i].endingOverride;
         inputs.push_back (std::move (in));
     }
@@ -536,6 +624,7 @@ void OrchaAudioProcessor::enqueueBuild (std::vector<int> indices,
             pattern.name = in.name;
             pattern.fxReverb = in.fxReverb;
             pattern.fxDelay = in.fxDelay;
+            pattern.fxPump = in.fxPump;
 
             auto loop = PreviewPlayer::Loop::Ptr (new PreviewPlayer::Loop());
             loop->buffer = LoopRenderer::render (pattern, ctx);
@@ -770,6 +859,7 @@ void OrchaAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
         v.setProperty ("favorite", opt.favorite, nullptr);
         v.setProperty ("rvb", (double) opt.fxReverb, nullptr);
         v.setProperty ("dly", (double) opt.fxDelay, nullptr);
+        v.setProperty ("pmp", (double) opt.fxPump, nullptr);
         v.setProperty ("algo", opt.present ? opt.pattern.algo
                                            : pendingSeeds[(size_t) i].algo, nullptr);
         v.setProperty ("dest", opt.present ? (int) opt.pattern.destination
@@ -860,6 +950,7 @@ void OrchaAudioProcessor::setStateInformation (const void* data, int sizeInBytes
             // 0.6.0 saved these as bools; a bool var reads back as 0/1.
             options[(size_t) i].fxReverb = (float) (double) v.getProperty ("rvb", 0.0);
             options[(size_t) i].fxDelay = (float) (double) v.getProperty ("dly", 0.0);
+            options[(size_t) i].fxPump = (float) (double) v.getProperty ("pmp", 0.0);
             options[(size_t) i].endingOverride = v.getProperty ("endov", -1);
 
             if ((bool) v.getProperty ("edited", false))

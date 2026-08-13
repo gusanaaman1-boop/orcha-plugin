@@ -32,12 +32,14 @@ PatternEditPanel::PatternEditPanel (OrchaAudioProcessor& p) : processor (p)
         {
             if (index >= 0)
                 processor.setOptionFx (index, (float) reverbSlider.getValue(),
-                                       (float) delaySlider.getValue());
+                                       (float) delaySlider.getValue(),
+                                       (float) pumpSlider.getValue());
         };
         addAndMakeVisible (s);
     };
     initFxSlider (reverbSlider, juce::Colour (0xffe85d4c));   // red
     initFxSlider (delaySlider, juce::Colour (0xff4da3ff));    // strong blue
+    initFxSlider (pumpSlider, juce::Colour (0xffb07aff));     // purple
 
     // CLEAN: three strengths behind one small button - decoration strips
     // away, anchors and planned silence are untouchable, RESET undoes.
@@ -69,6 +71,18 @@ PatternEditPanel::PatternEditPanel (OrchaAudioProcessor& p) : processor (p)
     };
     addAndMakeVisible (endingBox);
 
+    // B3: this card becomes a transition INTO the chosen card. Lands as an
+    // edit, so RESET restores the original take.
+    transitionBox.setTextWhenNothingSelected ("TRANSITION...");
+    transitionBox.onChange = [this]
+    {
+        const int target = transitionBox.getSelectedId() - 1;
+        if (index >= 0 && target >= 0 && target != index)
+            processor.makeTransition (index, target);
+        transitionBox.setSelectedId (0, juce::dontSendNotification);
+    };
+    addAndMakeVisible (transitionBox);
+
     setVisible (false);
 }
 
@@ -85,6 +99,12 @@ void PatternEditPanel::openFor (int optionIndex)
                           juce::dontSendNotification);
     endingBox.setSelectedId (processor.option (optionIndex).endingOverride + 2,
                              juce::dontSendNotification);
+    pumpSlider.setValue (processor.option (optionIndex).fxPump,
+                         juce::dontSendNotification);
+    transitionBox.clear (juce::dontSendNotification);
+    for (int i = 0; i < OrchaAudioProcessor::numOptions; ++i)
+        if (i != optionIndex && processor.option (i).present)
+            transitionBox.addItem ("-> " + processor.option (i).pattern.name, i + 1);
     setVisible (true);
     toFront (false);
     repaint();
@@ -176,6 +196,9 @@ void PatternEditPanel::paint (juce::Graphics& g)
     g.setColour (juce::Colour (0xff4da3ff));
     g.drawText ("DELAY", delaySlider.getX() - 2, delaySlider.getY() - 11,
                 delaySlider.getWidth(), 12, juce::Justification::centredLeft);
+    g.setColour (juce::Colour (0xffb07aff));
+    g.drawText ("PUMP", pumpSlider.getX() - 2, pumpSlider.getY() - 11,
+                pumpSlider.getWidth(), 12, juce::Justification::centredLeft);
 
     const auto grid = gridArea();
     const int steps = juce::jmax (1, working.stepCount());
@@ -270,10 +293,14 @@ void PatternEditPanel::resized()
     delaySlider.setBounds (top.removeFromRight (110));
     top.removeFromRight (44);   // room for the DELAY caption (painted)
     reverbSlider.setBounds (top.removeFromRight (110));
-    top.removeFromRight (12);
-    endingBox.setBounds (top.removeFromRight (130));
+    top.removeFromRight (10);
+    pumpSlider.setBounds (top.removeFromRight (80));
+    top.removeFromRight (36);   // PUMP caption (painted)
+    endingBox.setBounds (top.removeFromRight (122));
     top.removeFromRight (6);
-    cleanButton.setBounds (top.removeFromRight (64));
+    cleanButton.setBounds (top.removeFromRight (58));
+    top.removeFromRight (6);
+    transitionBox.setBounds (top.removeFromRight (118));
 }
 
 void PatternEditPanel::mouseDown (const juce::MouseEvent& e)
@@ -331,6 +358,32 @@ void PatternEditPanel::mouseUp (const juce::MouseEvent&)
             { return x.role == role && std::abs (x.pos - pos) < 0.01; }),
             working.events.end());
         applyWorking();
+    }
+    else
+    {
+        // F2: a click that lands on (or near) a thin off-grid tick deletes
+        // it - graces and roll hits are now editable-away, one by one.
+        const Role lane = laneRole (pressed.lane);
+        double bestDist = 0.6;
+        int bestIdx = -1;
+        for (int k = 0; k < (int) working.events.size(); ++k)
+        {
+            const auto& e = working.events[(size_t) k];
+            if (e.role != lane
+                || std::abs (e.pos - std::round (e.pos)) < 0.01)
+                continue;
+            const double d = std::abs (e.pos - ((double) pressed.step + 0.5));
+            if (d < bestDist)
+            {
+                bestDist = d;
+                bestIdx = k;
+            }
+        }
+        if (bestIdx >= 0)
+        {
+            working.events.erase (working.events.begin() + bestIdx);
+            applyWorking();
+        }
     }
 
     pressed = {};

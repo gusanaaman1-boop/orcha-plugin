@@ -28,6 +28,7 @@ juce::File RenderCache::fileFor (const Pattern& p, double bpm, double sampleRate
        << juce::roundToInt (p.settings.randomness * 100.0f)
        << "_r" << juce::roundToInt (p.fxReverb * 100.0f)
        << "_d" << juce::roundToInt (p.fxDelay * 100.0f)
+       << "_p" << juce::roundToInt (p.fxPump * 100.0f)
        << (pitchEnabled ? "" : "_np") << "_a" << p.algo;
 
     // Cubase shows the file name in the pool - keep it meaningful first.
