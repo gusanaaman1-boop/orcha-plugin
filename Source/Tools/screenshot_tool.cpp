@@ -89,6 +89,21 @@ int main (int argc, char* argv[])
             shoot ("04-edit-panel.png");
         }
 
+        int failuresEarly = 0;
+        // --- regenerate must visibly change the card (the DROP 02 bug) ---------
+        for (int idx : { 1, 5 })
+        {
+            const auto before = processor->option (idx).pattern.signature();
+            processor->regenerateOption (idx);
+            pumpUntil ([&] { return processor->option (idx).ready; }, 15000);
+            if (processor->option (idx).pattern.signature() == before)
+            {
+                std::cout << "REGEN FAIL: option " << idx << " did not change\n";
+                ++failuresEarly;
+            }
+        }
+        std::cout << (failuresEarly == 0 ? "REGEN OK" : "REGEN FAILED") << "\n";
+
         // --- state round-trip: seeds, favorites, settings must survive ---------
         processor->toggleFavorite (2);
         processor->toggleFavorite (7);
@@ -108,7 +123,7 @@ int main (int argc, char* argv[])
             return true;
         }, 30000);
 
-        int failures = 0;
+        int failures = failuresEarly;
         for (int i = 0; i < OrchaAudioProcessor::numOptions; ++i)
         {
             const auto& a = processor->option (i);

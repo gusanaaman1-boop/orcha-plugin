@@ -40,11 +40,13 @@ int main (int argc, char* argv[])
     ctx.roleMap = SampleAnalyzer::assignRoles (ctx.samples);
 
     juce::WavAudioFormat wav;
-    int written = 0;
-    for (auto family : { Family::EDM, Family::ARABIC, Family::MEDITERRANEAN,
-                         Family::AFRO, Family::HYBRID })
+    int written = 0, expected = 0;
+    for (auto family : { Family::EDM, Family::MELODIC_TECHNO, Family::PSYTRANCE,
+                         Family::ARABIC, Family::MEDITERRANEAN, Family::AFRO,
+                         Family::CINEMATIC, Family::HYBRID })
         for (auto mode : { Mode::DROP, Mode::BREAK, Mode::BUILD, Mode::GROOVE })
         {
+            ++expected;
             GeneratorSettings s;
             s.family = family;
             s.mode = mode;
@@ -69,7 +71,8 @@ int main (int argc, char* argv[])
             }
 
             const auto file = outDir.getChildFile (
-                juce::String (familyName (family)) + "_" + modeName (mode) + ".wav");
+                (juce::String (familyName (family)) + "_" + modeName (mode) + ".wav")
+                    .replaceCharacter (' ', '_'));
             file.deleteFile();
             std::unique_ptr<juce::FileOutputStream> stream (file.createOutputStream());
             if (stream == nullptr)
@@ -85,5 +88,5 @@ int main (int argc, char* argv[])
 
     std::cout << "wrote " << written << " audition loops to "
               << outDir.getFullPathName() << "\n";
-    return written == 20 ? 0 : 1;
+    return written == expected ? 0 : 1;
 }

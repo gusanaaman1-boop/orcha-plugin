@@ -1,5 +1,5 @@
 ORCHA — Windows install
-Rhythm Loop Generator · by Gussa Naaman · v0.4.1 · x64
+Rhythm Loop Generator · by Gussa Naaman · v0.5.0 · x64
 
 ------------------------------------------------------------------------------
 INSTALL - this is the whole thing
@@ -50,8 +50,9 @@ twelve different loop options, synced to the project tempo. Play them, keep
 the good ones, drag any card straight into an audio track as a WAV.
 
   DROP / BREAK / BUILD / GROOVE       what part of the track this is for
-  EDM / ARABIC / MEDITERRANEAN /      which rhythmic language it speaks
-  AFRO / HYBRID
+  EDM / MELODIC TECHNO / PSYTRANCE /  which rhythmic language it speaks
+  ARABIC / MEDITERRANEAN / AFRO /
+  CINEMATIC / HYBRID
   ENERGY / DENSITY / RANDOMNESS       the three macros
   1 / 2 / 4 BARS                      loop length
 

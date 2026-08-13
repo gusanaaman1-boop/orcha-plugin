@@ -43,9 +43,24 @@ static StyleInfo makeEdm()
         { "hard_techno", {
             { 0, Role::LOW, 1.0f }, { 4, Role::LOW, 1.0f }, { 8, Role::LOW, 1.0f }, { 12, Role::LOW, 1.0f },
             { 2, Role::HIGH, 0.7f }, { 6, Role::HIGH, 0.7f }, { 10, Role::HIGH, 0.7f }, { 14, Role::HIGH, 0.7f } },
-          0.0, { 3, 7, 11, 15 } },
-        // Melodic techno rolling: the floor plus choked LOW ghosts on every
-        // offbeat 8th - the pumping "rolling bass" cell of the genre.
+          0.0, { 3, 7, 11, 15 } } };
+    return s;
+}
+
+// The rolling-bass and hypnotic cells got their own family: the user works
+// in this genre, one chip deserves to speak it fluently.
+static StyleInfo makeMelodicTechno()
+{
+    StyleInfo s;
+    s.fourFloorAnchor = true;
+    s.ornamentDensity = 0.4f;
+    s.accentMap = { 1.00f, 0.68f, 0.92f, 0.76f, 0.95f, 0.68f, 0.90f, 0.78f,
+                    1.00f, 0.68f, 0.92f, 0.76f, 0.95f, 0.70f, 0.88f, 0.94f };
+    s.highFeelMs = 3.0f;
+    s.ghostiness = 0.65f;
+    s.skeletons = {
+        // The floor plus choked LOW ghosts on every offbeat 8th - the pumping
+        // "rolling bass" cell of the genre.
         { "melodic_rolling", {
             { 0, Role::LOW, 1.0f }, { 4, Role::LOW, 0.9f }, { 8, Role::LOW, 0.95f }, { 12, Role::LOW, 0.9f },
             { 2, Role::LOW, 0.35f }, { 6, Role::LOW, 0.35f }, { 10, Role::LOW, 0.35f }, { 14, Role::LOW, 0.38f },
@@ -58,7 +73,96 @@ static StyleInfo makeEdm()
             { 0, Role::HIGH, 0.6f }, { 2, Role::HIGH, 0.42f }, { 4, Role::HIGH, 0.58f }, { 6, Role::HIGH, 0.42f },
             { 8, Role::HIGH, 0.6f }, { 10, Role::HIGH, 0.42f }, { 12, Role::HIGH, 0.58f }, { 14, Role::HIGH, 0.45f },
             { 14, Role::MID, 0.55f } },
-          0.0, { 1, 5, 9, 13 } } };
+          0.0, { 1, 5, 9, 13 } },
+        // Deep and patient: floor, one snare on 3, the hats carry the motion.
+        { "deep_pulse", {
+            { 0, Role::LOW, 1.0f }, { 4, Role::LOW, 0.88f }, { 8, Role::LOW, 0.95f }, { 12, Role::LOW, 0.88f },
+            { 8, Role::MID, 0.72f },
+            { 2, Role::HIGH, 0.5f }, { 6, Role::HIGH, 0.46f }, { 10, Role::HIGH, 0.5f }, { 14, Role::HIGH, 0.46f } },
+          0.05, { 3, 7, 11, 13, 15 } },
+        // Tension build cell: rolling ghosts land only in the second half.
+        { "tension_offbeat", {
+            { 0, Role::LOW, 1.0f }, { 4, Role::LOW, 0.9f }, { 8, Role::LOW, 1.0f }, { 12, Role::LOW, 0.9f },
+            { 10, Role::LOW, 0.36f }, { 14, Role::LOW, 0.4f },
+            { 2, Role::HIGH, 0.48f }, { 6, Role::HIGH, 0.48f }, { 10, Role::HIGH, 0.52f }, { 14, Role::HIGH, 0.55f },
+            { 12, Role::MID, 0.6f } },
+          0.04, { 5, 7, 13, 15 } } };
+    return s;
+}
+
+// Psytrance: the kick owns the beats, the bass owns every 16th between them.
+// Precision is the aesthetic - almost no swing, low ghostiness, tight gates.
+static StyleInfo makePsytrance()
+{
+    StyleInfo s;
+    s.fourFloorAnchor = true;
+    s.ornamentDensity = 0.35f;
+    s.accentMap = { 1.00f, 0.82f, 0.85f, 0.82f, 0.96f, 0.82f, 0.85f, 0.82f,
+                    1.00f, 0.82f, 0.85f, 0.82f, 0.96f, 0.82f, 0.86f, 0.88f };
+    s.ghostiness = 0.3f;
+    s.skeletons = {
+        // Full-on: bass fills all three 16ths between every kick.
+        { "fullon_roll", {
+            { 0, Role::LOW, 1.0f }, { 4, Role::LOW, 1.0f }, { 8, Role::LOW, 1.0f }, { 12, Role::LOW, 1.0f },
+            { 1, Role::LOW, 0.42f }, { 2, Role::LOW, 0.42f }, { 3, Role::LOW, 0.44f },
+            { 5, Role::LOW, 0.42f }, { 6, Role::LOW, 0.42f }, { 7, Role::LOW, 0.44f },
+            { 9, Role::LOW, 0.42f }, { 10, Role::LOW, 0.42f }, { 11, Role::LOW, 0.44f },
+            { 13, Role::LOW, 0.42f }, { 14, Role::LOW, 0.42f }, { 15, Role::LOW, 0.44f },
+            { 2, Role::HIGH, 0.55f }, { 6, Role::HIGH, 0.55f }, { 10, Role::HIGH, 0.55f }, { 14, Role::HIGH, 0.55f } },
+          0.0, { 2, 6, 10, 14 } },
+        // Gallop: bass pairs on the back half of each beat.
+        { "psy_gallop", {
+            { 0, Role::LOW, 1.0f }, { 4, Role::LOW, 1.0f }, { 8, Role::LOW, 1.0f }, { 12, Role::LOW, 1.0f },
+            { 2, Role::LOW, 0.42f }, { 3, Role::LOW, 0.45f },
+            { 6, Role::LOW, 0.42f }, { 7, Role::LOW, 0.45f },
+            { 10, Role::LOW, 0.42f }, { 11, Role::LOW, 0.45f },
+            { 14, Role::LOW, 0.42f }, { 15, Role::LOW, 0.45f },
+            { 4, Role::MID, 0.7f }, { 12, Role::MID, 0.7f },
+            { 2, Role::HIGH, 0.5f }, { 6, Role::HIGH, 0.5f }, { 10, Role::HIGH, 0.5f }, { 14, Role::HIGH, 0.5f } },
+          0.0, { 1, 5, 9, 13 } },
+        // Progressive: offbeat 8th bass, roomier.
+        { "prog_psy", {
+            { 0, Role::LOW, 1.0f }, { 4, Role::LOW, 0.95f }, { 8, Role::LOW, 1.0f }, { 12, Role::LOW, 0.95f },
+            { 2, Role::LOW, 0.4f }, { 6, Role::LOW, 0.4f }, { 10, Role::LOW, 0.4f }, { 14, Role::LOW, 0.4f },
+            { 8, Role::MID, 0.65f },
+            { 2, Role::HIGH, 0.5f }, { 10, Role::HIGH, 0.5f } },
+          0.0, { 3, 7, 11, 15 } } };
+    return s;
+}
+
+// Cinematic: impact, air, and dread. Few events, huge weights, real silence -
+// drop an orchestral hit or a boom on a card and it speaks trailer.
+static StyleInfo makeCinematic()
+{
+    StyleInfo s;
+    s.ornamentDensity = 0.3f;
+    s.accentMap = { 1.00f, 0.55f, 0.70f, 0.60f, 0.85f, 0.55f, 0.75f, 0.60f,
+                    0.95f, 0.55f, 0.70f, 0.60f, 0.90f, 0.60f, 0.80f, 0.85f };
+    s.ghostiness = 0.22f;
+    s.skeletons = {
+        // One impact and the answer across the bar - mostly air.
+        { "impact_space", {
+            { 0, Role::LOW, 1.0f }, { 6, Role::HIGH, 0.5f }, { 10, Role::MID, 0.6f },
+            { 12, Role::LOW, 0.85f } },
+          0.0, { 3, 7, 14, 15 } },
+        // Heartbeat pairs - the dread cell.
+        { "heartbeat", {
+            { 0, Role::LOW, 1.0f }, { 3, Role::LOW, 0.7f },
+            { 8, Role::LOW, 0.95f }, { 11, Role::LOW, 0.7f },
+            { 6, Role::HIGH, 0.4f }, { 14, Role::HIGH, 0.45f } },
+          0.0, { 5, 13, 15 } },
+        // War drums: heavy 3-3-2 low line with answering toms.
+        { "war_drums", {
+            { 0, Role::LOW, 1.0f }, { 3, Role::LOW, 0.9f }, { 6, Role::LOW, 0.95f },
+            { 8, Role::LOW, 0.85f }, { 11, Role::LOW, 0.9f }, { 14, Role::LOW, 0.8f },
+            { 10, Role::MID, 0.7f }, { 12, Role::MID, 0.75f } },
+          0.0, { 2, 5, 13, 15 } },
+        // Trailer rise: weight climbing across the bar toward the next hit.
+        { "trailer_rise", {
+            { 0, Role::LOW, 1.0f }, { 8, Role::LOW, 0.8f },
+            { 4, Role::MID, 0.55f }, { 10, Role::MID, 0.65f }, { 12, Role::MID, 0.75f },
+            { 14, Role::MID, 0.85f }, { 6, Role::HIGH, 0.45f } },
+          0.0, { 2, 3, 13, 15 } } };
     return s;
 }
 
@@ -236,18 +340,24 @@ static StyleInfo makeHybrid()
 const StyleInfo& RhythmStyle::get (Family family)
 {
     static const StyleInfo edm = makeEdm();
+    static const StyleInfo melodic = makeMelodicTechno();
+    static const StyleInfo psy = makePsytrance();
     static const StyleInfo arabic = makeArabic();
     static const StyleInfo med = makeMediterranean();
     static const StyleInfo afro = makeAfro();
+    static const StyleInfo cinematic = makeCinematic();
     static const StyleInfo hybrid = makeHybrid();
 
     switch (family)
     {
-        case Family::EDM:           return edm;
-        case Family::ARABIC:        return arabic;
-        case Family::MEDITERRANEAN: return med;
-        case Family::AFRO:          return afro;
-        case Family::HYBRID:        return hybrid;
+        case Family::EDM:            return edm;
+        case Family::MELODIC_TECHNO: return melodic;
+        case Family::PSYTRANCE:      return psy;
+        case Family::ARABIC:         return arabic;
+        case Family::MEDITERRANEAN:  return med;
+        case Family::AFRO:           return afro;
+        case Family::CINEMATIC:      return cinematic;
+        case Family::HYBRID:         return hybrid;
     }
     return edm;
 }

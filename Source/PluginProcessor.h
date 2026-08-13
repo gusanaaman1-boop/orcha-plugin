@@ -98,8 +98,11 @@ private:
     void notifyModel();
     void rolesChanged();
     // Generates + renders the given option indices on the pool. Seeds must
-    // already be stored in pendingSeeds for those indices.
-    void enqueueBuild (std::vector<int> indices);
+    // already be stored in pendingSeeds for those indices. extraSigs are
+    // signatures the new results must additionally differ from (a variation
+    // must differ from its own previous take).
+    void enqueueBuild (std::vector<int> indices,
+                       juce::StringArray extraSigs = {});
     void rerenderAtCurrentTempo();
 
     struct SeedPair { juce::uint64 motif = 0, orn = 0; };

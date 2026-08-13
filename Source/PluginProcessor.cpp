@@ -132,7 +132,13 @@ void OrchaAudioProcessor::regenerateOption (int index)
         LoopGenerator::deriveSeed (~fresh, index) };
     opt.ready = false;
     opt.edited = false;
-    enqueueBuild ({ index });
+    // The new take must differ from the one it replaces - a card with a
+    // simple motif can otherwise re-roll into the identical pattern and look
+    // like the button did nothing.
+    juce::StringArray mustDiffer;
+    if (opt.present)
+        mustDiffer.add (opt.pattern.signature());
+    enqueueBuild ({ index }, std::move (mustDiffer));
 }
 
 void OrchaAudioProcessor::applyEditedPattern (int index, Pattern edited)
@@ -166,7 +172,8 @@ void OrchaAudioProcessor::resetOptionEdits (int index)
     enqueueBuild ({ index });
 }
 
-void OrchaAudioProcessor::enqueueBuild (std::vector<int> indices)
+void OrchaAudioProcessor::enqueueBuild (std::vector<int> indices,
+                                        juce::StringArray extraSigs)
 {
     if (indices.empty())
         return;
@@ -197,14 +204,16 @@ void OrchaAudioProcessor::enqueueBuild (std::vector<int> indices)
         inputs.push_back (std::move (in));
     }
 
-    // Signatures the new batch must differ from: kept favorites that are NOT
-    // being rebuilt here. An option must never collide with itself, or a
-    // state restore would reseed it away from its saved pattern.
-    juce::StringArray existingSigs;
+    // Signatures the new batch must differ from: every present option that is
+    // NOT being rebuilt here (not just favorites - DROP 02 once re-rolled
+    // into a twin of DROP 05 and looked frozen), plus the caller's extras.
+    // An option must never collide with its own stored signature, or a state
+    // restore would reseed it away from its saved pattern.
+    juce::StringArray existingSigs = std::move (extraSigs);
     for (int i = 0; i < numOptions; ++i)
     {
         const auto& opt = options[(size_t) i];
-        if (opt.favorite && opt.present
+        if (opt.present
             && std::find (indices.begin(), indices.end(), i) == indices.end())
             existingSigs.add (opt.pattern.signature());
     }
@@ -503,11 +512,7 @@ void OrchaAudioProcessor::setStateInformation (const void* data, int sizeInBytes
         const juce::String m = st.getProperty ("mode", "DROP");
         settings.mode = m == "BREAK" ? Mode::BREAK : m == "BUILD" ? Mode::BUILD
                       : m == "GROOVE" ? Mode::GROOVE : Mode::DROP;
-        const juce::String f = st.getProperty ("family", "EDM");
-        settings.family = f == "ARABIC" ? Family::ARABIC
-                        : f == "MEDITERRANEAN" ? Family::MEDITERRANEAN
-                        : f == "AFRO" ? Family::AFRO
-                        : f == "HYBRID" ? Family::HYBRID : Family::EDM;
+        settings.family = familyFromName (st.getProperty ("family", "EDM").toString());
         settings.energy = (float) (double) st.getProperty ("energy", 0.6);
         settings.density = (float) (double) st.getProperty ("density", 0.5);
         settings.randomness = (float) (double) st.getProperty ("randomness", 0.3);

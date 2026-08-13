@@ -73,8 +73,9 @@ int main()
     }
 
     // --- determinism ------------------------------------------------------------
-    for (auto family : { Family::EDM, Family::ARABIC, Family::MEDITERRANEAN,
-                         Family::AFRO, Family::HYBRID })
+    for (auto family : { Family::EDM, Family::MELODIC_TECHNO, Family::PSYTRANCE,
+                         Family::ARABIC, Family::MEDITERRANEAN, Family::AFRO,
+                         Family::CINEMATIC, Family::HYBRID })
         for (auto mode : { Mode::DROP, Mode::BREAK, Mode::BUILD, Mode::GROOVE })
         {
             GeneratorSettings s;
@@ -485,11 +486,13 @@ int main()
                "EDM hats sit laid back by the family feel");
 
         // Melodic-techno rolling cell is reachable: choked low ghosts offbeat.
+        GeneratorSettings mel = s;
+        mel.family = Family::MELODIC_TECHNO;
         int rollingSeeds = 0;
         for (int i = 0; i < 60; ++i)
         {
             const auto p = PatternValidator::validate (LoopGenerator::generate (
-                LoopGenerator::deriveSeed (13579, i), s));
+                LoopGenerator::deriveSeed (13579, i), mel));
             for (const auto& e : p.events)
                 if (e.role == Role::LOW && e.gateSteps >= 1.0 && e.velocity < 0.6f)
                 {
@@ -497,7 +500,44 @@ int main()
                     break;
                 }
         }
-        check (rollingSeeds >= 4, "melodic rolling skeleton appears in the pool");
+        check (rollingSeeds >= 12, "melodic rolling cell appears often in its family");
+
+        // PSYTRANCE: the bass fills the space between kicks - plenty of
+        // off-beat LOW events, and every one of them gated tight.
+        GeneratorSettings psy = s;
+        psy.family = Family::PSYTRANCE;
+        int offbeatBass = 0, ungated = 0, psyPatterns = 0;
+        for (int i = 0; i < 24; ++i)
+        {
+            const auto p = PatternValidator::validate (LoopGenerator::generate (
+                LoopGenerator::deriveSeed (30303, i), psy));
+            ++psyPatterns;
+            for (const auto& e : p.events)
+                if (e.role == Role::LOW && ! e.roll
+                    && juce::roundToInt (std::floor (e.pos)) % 4 != 0
+                    && std::abs (e.pos - std::round (e.pos)) < 0.01)
+                {
+                    ++offbeatBass;
+                    if (e.gateSteps <= 0.0)
+                        ++ungated;
+                }
+        }
+        check (offbeatBass >= psyPatterns * 4, "psytrance rolls its off-beat bass");
+        check (ungated == 0, "psytrance bass notes are all gated");
+
+        // CINEMATIC: meaningfully sparser than EDM at the same settings.
+        GeneratorSettings cin = s;
+        cin.family = Family::CINEMATIC;
+        double cinEvents = 0.0, edmEvents = 0.0;
+        for (int i = 0; i < 24; ++i)
+        {
+            const auto seed = LoopGenerator::deriveSeed (40404, i);
+            cinEvents += (double) PatternValidator::validate (
+                LoopGenerator::generate (seed, cin)).events.size();
+            edmEvents += (double) PatternValidator::validate (
+                LoopGenerator::generate (seed, s)).events.size();
+        }
+        check (cinEvents < edmEvents * 0.75, "CINEMATIC keeps its air");
     }
 
     // --- variation preserves the motif ---------------------------------------------

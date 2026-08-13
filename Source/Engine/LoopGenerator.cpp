@@ -95,9 +95,10 @@ Pattern LoopGenerator::generate (juce::uint64 motifSeed, juce::uint64 ornamentSe
             e.velocity = hit.accent;
             e.protectedAnchor = hit.role == Role::LOW || hit.accent >= 0.75f;
             // Quiet skeleton LOWs are rolling-bass ghosts, not kicks that
-            // ring: choke them so the pump stays tight.
+            // ring: choke them so the pump stays tight. One step, so even
+            // psytrance 16th bass lines stay clean of each other.
             if (hit.role == Role::LOW && hit.accent < 0.5f)
-                e.gateSteps = 1.5;
+                e.gateSteps = 1.0;
             p.events.push_back (e);
         }
     }

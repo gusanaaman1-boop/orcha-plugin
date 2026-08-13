@@ -122,21 +122,14 @@ void OrchaAudioProcessorEditor::paint (juce::Graphics& g)
 {
     g.fillAll (theme::background);
 
-    auto header = getLocalBounds().removeFromTop (44).reduced (16, 6);
-    g.setColour (theme::text);
-    g.setFont (theme::heading (26.0f));
-    g.drawText ("ORCHA", header, juce::Justification::centredLeft);
+    auto header = getLocalBounds().removeFromTop (44).reduced (16, 4);
 
-    g.setColour (theme::turquoise);
-    g.setFont (theme::label (12.0f));
-    g.drawText ("DROP UP TO 3 SAMPLES", header, juce::Justification::centred);
-
-    // The NAAMAN mark - the site logo drawn vectorially: a circle holding an
-    // N of two uprights and one gold diagonal - with the maker's name. Small
-    // and constant, a signature rather than a splash.
+    // The NAAMAN mark opens the header, big and next to the product name -
+    // the site logo drawn vectorially: a circle holding an N of two uprights
+    // and one gold diagonal, with a soft gold glow under the diagonal.
     {
-        const float logoSize = 26.0f;
-        auto logo = juce::Rectangle<float> ((float) header.getRight() - logoSize,
+        const float logoSize = 36.0f;
+        auto logo = juce::Rectangle<float> ((float) header.getX(),
                                             (float) header.getCentreY() - logoSize * 0.5f,
                                             logoSize, logoSize);
         auto pt = [&logo] (float u, float v)
@@ -145,18 +138,33 @@ void OrchaAudioProcessorEditor::paint (juce::Graphics& g)
                                        logo.getY() + v / 40.0f * logo.getHeight());
         };
         const juce::Colour gold (0xffc9a86a);
-        g.setColour (theme::text.withAlpha (0.28f));
-        g.drawEllipse (logo.reduced (1.0f), 1.0f);
+        g.setColour (theme::panelLight.withAlpha (0.6f));
+        g.fillEllipse (logo.reduced (1.0f));
+        g.setColour (theme::text.withAlpha (0.35f));
+        g.drawEllipse (logo.reduced (1.0f), 1.3f);
+        // Glow first, strokes on top.
+        g.setColour (gold.withAlpha (0.25f));
+        g.drawLine ({ pt (13.2f, 12.6f), pt (26.8f, 27.4f) }, 5.0f);
         g.setColour (theme::text);
-        g.drawLine ({ pt (13.2f, 12.6f), pt (13.2f, 27.4f) }, 1.2f);
-        g.drawLine ({ pt (26.8f, 12.6f), pt (26.8f, 27.4f) }, 1.2f);
+        g.drawLine ({ pt (13.2f, 12.6f), pt (13.2f, 27.4f) }, 2.0f);
+        g.drawLine ({ pt (26.8f, 12.6f), pt (26.8f, 27.4f) }, 2.0f);
         g.setColour (gold);
-        g.drawLine ({ pt (13.2f, 12.6f), pt (26.8f, 27.4f) }, 1.2f);
+        g.drawLine ({ pt (13.2f, 12.6f), pt (26.8f, 27.4f) }, 2.2f);
+    }
 
-        auto textArea = header.withTrimmedRight ((int) logoSize + 8);
+    g.setColour (theme::text);
+    g.setFont (theme::heading (26.0f));
+    g.drawText ("ORCHA", header.withTrimmedLeft (46), juce::Justification::centredLeft);
+
+    g.setColour (theme::turquoise);
+    g.setFont (theme::label (12.0f));
+    g.drawText ("DROP UP TO 3 SAMPLES", header, juce::Justification::centred);
+
+    // Maker + version, quiet, on the right.
+    {
         g.setColour (theme::text);
         g.setFont (theme::heading (11.0f));
-        g.drawText (productInfo::maker, textArea.withTrimmedBottom (header.getHeight() / 2 - 2),
+        g.drawText (productInfo::maker, header.withTrimmedBottom (header.getHeight() / 2 - 2),
                     juce::Justification::bottomRight);
         // The git describe only earns its place when it says more than the
         // version already does (dirty builds, commits past the tag).
@@ -167,7 +175,7 @@ void OrchaAudioProcessorEditor::paint (juce::Graphics& g)
             versionLine = ORCHA_GIT_DESCRIBE;
         g.setColour (theme::textDim);
         g.setFont (theme::label (9.0f));
-        g.drawText (versionLine, textArea.withTrimmedTop (header.getHeight() / 2),
+        g.drawText (versionLine, header.withTrimmedTop (header.getHeight() / 2),
                     juce::Justification::topRight);
     }
 

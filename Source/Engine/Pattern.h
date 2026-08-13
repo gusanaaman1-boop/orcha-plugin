@@ -8,7 +8,8 @@ namespace orcha
 {
 
 enum class Mode   { DROP = 0, BREAK, BUILD, GROOVE };
-enum class Family { EDM = 0, ARABIC, MEDITERRANEAN, AFRO, HYBRID };
+enum class Family { EDM = 0, MELODIC_TECHNO, PSYTRANCE, ARABIC, MEDITERRANEAN,
+                    AFRO, CINEMATIC, HYBRID };
 
 inline const char* modeName (Mode m)
 {
@@ -26,13 +27,28 @@ inline const char* familyName (Family f)
 {
     switch (f)
     {
-        case Family::EDM:           return "EDM";
-        case Family::ARABIC:        return "ARABIC";
-        case Family::MEDITERRANEAN: return "MEDITERRANEAN";
-        case Family::AFRO:          return "AFRO";
-        case Family::HYBRID:        return "HYBRID";
+        case Family::EDM:            return "EDM";
+        case Family::MELODIC_TECHNO: return "MELODIC TECHNO";
+        case Family::PSYTRANCE:      return "PSYTRANCE";
+        case Family::ARABIC:         return "ARABIC";
+        case Family::MEDITERRANEAN:  return "MEDITERRANEAN";
+        case Family::AFRO:           return "AFRO";
+        case Family::CINEMATIC:      return "CINEMATIC";
+        case Family::HYBRID:         return "HYBRID";
     }
     return "EDM";
+}
+
+inline Family familyFromName (const juce::String& s)
+{
+    if (s == "MELODIC TECHNO") return Family::MELODIC_TECHNO;
+    if (s == "PSYTRANCE")      return Family::PSYTRANCE;
+    if (s == "ARABIC")         return Family::ARABIC;
+    if (s == "MEDITERRANEAN")  return Family::MEDITERRANEAN;
+    if (s == "AFRO")           return Family::AFRO;
+    if (s == "CINEMATIC")      return Family::CINEMATIC;
+    if (s == "HYBRID")         return Family::HYBRID;
+    return Family::EDM;
 }
 
 // One triggered hit inside a loop. Positions are in 16th-note steps from the

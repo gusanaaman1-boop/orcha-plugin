@@ -29,8 +29,11 @@ private:
 
     juce::TextButton dropButton { "DROP" }, breakButton { "BREAK" },
                      buildButton { "BUILD" }, grooveButton { "GROOVE" };
-    juce::TextButton edmChip { "EDM" }, arabicChip { "ARABIC" },
-                     medChip { "MEDITERRANEAN" }, afroChip { "AFRO" }, hybridChip { "HYBRID" };
+    // Two rows of four chips - eight families and the strip stays one strip.
+    juce::TextButton edmChip { "EDM" }, melodicChip { "MELODIC TECHNO" },
+                     psyChip { "PSYTRANCE" }, arabicChip { "ARABIC" },
+                     medChip { "MEDITERRANEAN" }, afroChip { "AFRO" },
+                     cinematicChip { "CINEMATIC" }, hybridChip { "HYBRID" };
     juce::Slider energyKnob, densityKnob, randomnessKnob;
     juce::TextButton bars1 { "1 BAR" }, bars2 { "2 BARS" }, bars4 { "4 BARS" };
     juce::TextButton generateButton { "GENERATE LOOPS" };

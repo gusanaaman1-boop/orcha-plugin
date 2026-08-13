@@ -6,13 +6,15 @@ namespace orcha
 GenerationStrip::GenerationStrip()
 {
     wireToggleGroup ({ &dropButton, &breakButton, &buildButton, &grooveButton }, 101);
-    wireToggleGroup ({ &edmChip, &arabicChip, &medChip, &afroChip, &hybridChip }, 102);
+    wireToggleGroup ({ &edmChip, &melodicChip, &psyChip, &arabicChip,
+                       &medChip, &afroChip, &cinematicChip, &hybridChip }, 102);
     wireToggleGroup ({ &bars1, &bars2, &bars4 }, 103);
     dropButton.setToggleState (true, juce::dontSendNotification);
     edmChip.setToggleState (true, juce::dontSendNotification);
     bars1.setToggleState (true, juce::dontSendNotification);
 
-    for (auto* chip : { &edmChip, &arabicChip, &medChip, &afroChip, &hybridChip })
+    for (auto* chip : { &edmChip, &melodicChip, &psyChip, &arabicChip,
+                        &medChip, &afroChip, &cinematicChip, &hybridChip })
         chip->setColour (juce::TextButton::buttonOnColourId, theme::turquoise);
     for (auto* b : { &bars1, &bars2, &bars4 })
         b->setColour (juce::TextButton::buttonOnColourId, theme::turquoise);
@@ -54,7 +56,8 @@ void GenerationStrip::setSettings (const GeneratorSettings& s)
 {
     juce::TextButton* modes[] = { &dropButton, &breakButton, &buildButton, &grooveButton };
     modes[(int) s.mode]->setToggleState (true, juce::dontSendNotification);
-    juce::TextButton* families[] = { &edmChip, &arabicChip, &medChip, &afroChip, &hybridChip };
+    juce::TextButton* families[] = { &edmChip, &melodicChip, &psyChip, &arabicChip,
+                                     &medChip, &afroChip, &cinematicChip, &hybridChip };
     families[(int) s.family]->setToggleState (true, juce::dontSendNotification);
     energyKnob.setValue (s.energy, juce::dontSendNotification);
     densityKnob.setValue (s.density, juce::dontSendNotification);
@@ -69,9 +72,12 @@ GeneratorSettings GenerationStrip::getSettings() const
     s.mode = breakButton.getToggleState() ? Mode::BREAK
            : buildButton.getToggleState() ? Mode::BUILD
            : grooveButton.getToggleState() ? Mode::GROOVE : Mode::DROP;
-    s.family = arabicChip.getToggleState() ? Family::ARABIC
+    s.family = melodicChip.getToggleState() ? Family::MELODIC_TECHNO
+             : psyChip.getToggleState() ? Family::PSYTRANCE
+             : arabicChip.getToggleState() ? Family::ARABIC
              : medChip.getToggleState() ? Family::MEDITERRANEAN
              : afroChip.getToggleState() ? Family::AFRO
+             : cinematicChip.getToggleState() ? Family::CINEMATIC
              : hybridChip.getToggleState() ? Family::HYBRID : Family::EDM;
     s.energy = (float) energyKnob.getValue();
     s.density = (float) densityKnob.getValue();
@@ -114,21 +120,27 @@ void GenerationStrip::resized()
     for (auto* b : { &dropButton, &breakButton, &buildButton, &grooveButton })
         b->setBounds (modeArea.removeFromLeft (modeW).reduced (2, 4));
 
-    // Family chips get widths proportional to their label, so MEDITERRANEAN
-    // is readable while EDM stays compact.
+    // Eight family chips in two rows of four, widths proportional to their
+    // labels so MEDITERRANEAN reads while EDM stays compact.
     area.removeFromLeft (6);
     auto chipArea = area.removeFromLeft (juce::jmax (330, area.getWidth() * 40 / 100));
-    juce::TextButton* chips[] = { &edmChip, &arabicChip, &medChip, &afroChip, &hybridChip };
-    int units = 0;
-    for (auto* c : chips)
-        units += c->getButtonText().length() + 4;
-    int consumed = 0;
-    for (auto* c : chips)
+    juce::TextButton* chipRows[2][4] = {
+        { &edmChip, &melodicChip, &psyChip, &arabicChip },
+        { &medChip, &afroChip, &cinematicChip, &hybridChip } };
+    const int rowH = chipArea.getHeight() / 2;
+    for (int row = 0; row < 2; ++row)
     {
-        const int share = (c->getButtonText().length() + 4) * chipArea.getWidth() / units;
-        c->setBounds (chipArea.getX() + consumed, chipArea.getY() + 6,
-                      share - 3, chipArea.getHeight() - 12);
-        consumed += share;
+        int units = 0;
+        for (auto* c : chipRows[row])
+            units += c->getButtonText().length() + 4;
+        int consumed = 0;
+        for (auto* c : chipRows[row])
+        {
+            const int share = (c->getButtonText().length() + 4) * chipArea.getWidth() / units;
+            c->setBounds (chipArea.getX() + consumed, chipArea.getY() + row * rowH + 2,
+                          share - 3, rowH - 4);
+            consumed += share;
+        }
     }
 
     auto generateArea = area.removeFromRight (juce::jmax (160, area.getWidth() * 26 / 100));
