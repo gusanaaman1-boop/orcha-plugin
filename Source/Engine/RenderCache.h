@@ -13,12 +13,13 @@ namespace RenderCache
     juce::File cacheDirectory();
 
     // Deterministic file for (pattern seed+settings, bpm, sampleRate).
-    juce::File fileFor (const Pattern& p, double bpm, double sampleRate);
+    juce::File fileFor (const Pattern& p, double bpm, double sampleRate,
+                        bool pitchEnabled = true);
 
     // Writes a 24-bit WAV; returns an invalid File on failure. Safe to call
     // from worker threads.
     juce::File write (const juce::AudioBuffer<float>& buffer, const Pattern& p,
-                      double bpm, double sampleRate);
+                      double bpm, double sampleRate, bool pitchEnabled = true);
 
     // Drops cache files older than a week so the directory cannot grow forever.
     void cleanupStale();

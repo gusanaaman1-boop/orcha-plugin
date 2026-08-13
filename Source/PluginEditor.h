@@ -47,6 +47,7 @@ private:
     SampleEditPanel samplePanel;
 
     std::array<juce::uint32, OrchaAudioProcessor::numSlots> loadStartedAt {};
+    int slowTick = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (OrchaAudioProcessorEditor)
 };

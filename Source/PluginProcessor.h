@@ -71,6 +71,12 @@ public:
     void togglePlay (int index);
     bool anySampleLoaded() const;
     bool isGenerating() const           { return pendingJobs.load() > 0; }
+
+    // Global PITCH switch: off re-renders everything without pitch moves.
+    bool isPitchEnabled() const         { return pitchEnabled; }
+    void setPitchEnabled (bool enabled);
+    // Playhead of the playing card, 0..1.
+    float previewFraction() const       { return preview.playbackFraction(); }
     // A build job is on its way to filling this slot.
     bool optionBusy (int index) const   { return pendingSeeds[(size_t) index].motif != 0
                                               && ! options[(size_t) index].ready
@@ -142,6 +148,7 @@ private:
     std::atomic<bool> playingAtomic { false };
     double lastRenderBpm = 0.0;             // message thread
     double lastRenderSr = 0.0;              // message thread
+    bool pitchEnabled = true;               // message thread; renders honor it
     std::atomic<double> srAtomic { 48000.0 };   // written by prepareToPlay
 
     JUCE_DECLARE_WEAK_REFERENCEABLE (OrchaAudioProcessor)

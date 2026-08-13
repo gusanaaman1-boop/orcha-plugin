@@ -22,6 +22,9 @@ public:
     void update (PreviewPlayer::Loop::Ptr loop, const juce::String& name,
                  bool present, bool ready, bool favorite, bool playing);
 
+    // Playhead position (0..1) while this card plays; cheap to call fast.
+    void setPlayhead (float fraction);
+
     void paint (juce::Graphics&) override;
     void mouseUp (const juce::MouseEvent&) override;
     void mouseDrag (const juce::MouseEvent&) override;
@@ -35,11 +38,17 @@ private:
     juce::Rectangle<float> midiArea() const;
     juce::Rectangle<float> editArea() const;
 
+    juce::Rectangle<float> waveBounds() const;
+
     int index;
     PreviewPlayer::Loop::Ptr loop;
     juce::String name;
     bool present = false, ready = false, favorite = false, playing = false;
     bool dragging = false;
+    float playhead = 0.0f;
+    // The waveform is cached as an image so the fast playhead repaints do
+    // not re-scan the audio buffer every frame.
+    juce::Image waveImage;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (OptionCard)
 };

@@ -12,6 +12,8 @@ void OptionCard::update (PreviewPlayer::Loop::Ptr loopIn, const juce::String& na
     if (loop == loopIn && name == nameIn && present == presentIn
         && ready == readyIn && favorite == favoriteIn && playing == playingIn)
         return;
+    if (loop != loopIn)
+        waveImage = juce::Image();   // audio changed: re-render the cache
     loop = std::move (loopIn);
     name = nameIn;
     present = presentIn;
@@ -39,6 +41,22 @@ juce::Rectangle<float> OptionCard::regenArea() const
 juce::Rectangle<float> OptionCard::dragArea() const
 {
     return { (float) getWidth() - 64.0f, (float) getHeight() - 26.0f, 56.0f, 20.0f };
+}
+
+juce::Rectangle<float> OptionCard::waveBounds() const
+{
+    const auto pa = playArea();
+    return { pa.getRight() + 8.0f, 12.0f,
+             (float) getWidth() - pa.getRight() - 46.0f,
+             (float) getHeight() - 46.0f };
+}
+
+void OptionCard::setPlayhead (float fraction)
+{
+    if (! playing || std::abs (fraction - playhead) < 0.002f)
+        return;
+    playhead = fraction;
+    repaint (waveBounds().expanded (3.0f).toNearestInt());
 }
 
 juce::Rectangle<float> OptionCard::midiArea() const
@@ -87,13 +105,29 @@ void OptionCard::paint (juce::Graphics& g)
         g.fillPath (tri);
     }
 
-    // Waveform.
-    auto wave = juce::Rectangle<float> (pa.getRight() + 8.0f, 12.0f,
-                                        (float) getWidth() - pa.getRight() - 46.0f,
-                                        (float) getHeight() - 46.0f);
+    // Waveform, cached as an image so the playhead can move at frame rate.
+    const auto wave = waveBounds();
     if (ready && loop != nullptr)
-        theme::paintWaveform (g, wave, loop->buffer,
-                              theme::waveColour (index).withAlpha (0.95f));
+    {
+        const int w = juce::jmax (1, (int) wave.getWidth());
+        const int h = juce::jmax (1, (int) wave.getHeight());
+        if (! waveImage.isValid() || waveImage.getWidth() != w * 2)
+        {
+            waveImage = juce::Image (juce::Image::ARGB, w * 2, h * 2, true);
+            juce::Graphics ig (waveImage);
+            theme::paintWaveform (ig, { 0.0f, 0.0f, (float) w * 2, (float) h * 2 },
+                                  loop->buffer,
+                                  theme::waveColour (index).withAlpha (0.95f));
+        }
+        g.drawImage (waveImage, wave);
+        if (playing)
+        {
+            g.setColour (theme::amber.withAlpha (0.9f));
+            g.fillRect (wave.getX() + wave.getWidth()
+                            * juce::jlimit (0.0f, 1.0f, playhead) - 1.0f,
+                        wave.getY(), 2.0f, wave.getHeight());
+        }
+    }
     else
     {
         g.setColour (theme::textDim);

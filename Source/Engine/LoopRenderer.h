@@ -16,6 +16,10 @@ namespace LoopRenderer
         double bpm = 120.0;
         std::vector<InputSample::Ptr> samples;   // slot-indexed, nulls allowed
         RoleMap roleMap;
+        // Global PITCH switch: off mutes every musical pitch move (countdown,
+        // rolls, randomness). The single-sample role-separation offsets stay -
+        // they are timbre, not melody.
+        bool pitchEnabled = true;
     };
 
     // Stereo buffer, exactly bars * 4 beats long at ctx.bpm/ctx.sampleRate.

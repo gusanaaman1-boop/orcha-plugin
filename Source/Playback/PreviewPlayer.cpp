@@ -92,6 +92,7 @@ void PreviewPlayer::process (juce::AudioBuffer<float>& out, double hostPpq,
             out.addSample (ch, i, loop.getSample (juce::jmin (ch, loop.getNumChannels() - 1), idx));
         phase += 1.0;
     }
+    fraction.store ((float) (phase / (double) loopLen), std::memory_order_relaxed);
     juce::ignoreUnused (sampleRate);
 }
 

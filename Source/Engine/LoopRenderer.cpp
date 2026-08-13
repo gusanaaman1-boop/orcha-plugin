@@ -136,7 +136,7 @@ juce::AudioBuffer<float> LoopRenderer::render (const Pattern& pattern, const Con
 
         // One loaded sample covering several roles still needs the roles to
         // sound different: non-LOW roles borrow pitch and a shorter gate.
-        int pitch = e.pitchSemis;
+        int pitch = ctx.pitchEnabled ? e.pitchSemis : 0;
         float gainScale = 1.0f;
         double gate = e.gateSteps;
         // Loop-like source files (stems, phrases) retrigger as slices, not as

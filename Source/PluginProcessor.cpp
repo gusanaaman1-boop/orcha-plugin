@@ -262,6 +262,7 @@ void OrchaAudioProcessor::enqueueBuild (std::vector<int> indices,
     ctx.bpm = bpmAtomic.load();
     ctx.samples = samples;
     ctx.roleMap = roleMap;
+    ctx.pitchEnabled = pitchEnabled;
     lastRenderBpm = ctx.bpm;
     lastRenderSr = ctx.sampleRate;
 
@@ -329,7 +330,8 @@ void OrchaAudioProcessor::enqueueBuild (std::vector<int> indices,
             loop->bpm = ctx.bpm;
             loop->bars = pattern.settings.bars;
             loop->optionIndex = in.index;
-            const auto wav = RenderCache::write (loop->buffer, pattern, ctx.bpm, ctx.sampleRate);
+            const auto wav = RenderCache::write (loop->buffer, pattern, ctx.bpm,
+                                                 ctx.sampleRate, ctx.pitchEnabled);
 
             const int index = in.index;
             const bool fromEdit = in.useExisting;
@@ -405,8 +407,26 @@ juce::File OrchaAudioProcessor::ensureWavFor (int index)
         return opt.wavFile;
     // Cache was evicted: the render is tiny, write it back synchronously.
     opt.wavFile = RenderCache::write (opt.loop->buffer, opt.pattern,
-                                      opt.loop->bpm, srAtomic.load());
+                                      opt.loop->bpm, srAtomic.load(), pitchEnabled);
     return opt.wavFile;
+}
+
+void OrchaAudioProcessor::setPitchEnabled (bool enabled)
+{
+    if (pitchEnabled == enabled)
+        return;
+    pitchEnabled = enabled;
+    // Same patterns, new render: pitch is a render-time decision.
+    std::vector<int> present;
+    for (int i = 0; i < numOptions; ++i)
+        if (options[(size_t) i].present)
+        {
+            options[(size_t) i].ready = false;
+            present.push_back (i);
+        }
+    if (! present.empty() && anySampleLoaded())
+        enqueueBuild (std::move (present), {}, true);
+    notifyModel();
 }
 
 juce::File OrchaAudioProcessor::ensureMidiFor (int index)
@@ -493,6 +513,7 @@ void OrchaAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
     st.setProperty ("density", settings.density, nullptr);
     st.setProperty ("randomness", settings.randomness, nullptr);
     st.setProperty ("bars", settings.bars, nullptr);
+    st.setProperty ("pitch", pitchEnabled, nullptr);
     root.appendChild (st, nullptr);
 
     juce::ValueTree ss ("samples");
@@ -586,6 +607,7 @@ void OrchaAudioProcessor::setStateInformation (const void* data, int sizeInBytes
         settings.density = (float) (double) st.getProperty ("density", 0.5);
         settings.randomness = (float) (double) st.getProperty ("randomness", 0.3);
         settings.bars = juce::jlimit (1, 4, (int) st.getProperty ("bars", 1));
+        pitchEnabled = st.getProperty ("pitch", true);
     }
 
     for (auto& opt : options)

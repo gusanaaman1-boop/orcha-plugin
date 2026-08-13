@@ -45,6 +45,7 @@ OrchaAudioProcessorEditor::OrchaAudioProcessorEditor (OrchaAudioProcessor& p)
         processor.settings = strip.getSettings();
         processor.generateAll();
     };
+    strip.onPitchToggle = [this] (bool on) { processor.setPitchEnabled (on); };
     addAndMakeVisible (strip);
 
     for (int i = 0; i < OrchaAudioProcessor::numOptions; ++i)
@@ -76,7 +77,9 @@ OrchaAudioProcessorEditor::OrchaAudioProcessorEditor (OrchaAudioProcessor& p)
     addAndMakeVisible (generateMoreButton);
 
     processor.onModelChanged = [this] { refresh(); };
-    startTimer (250);
+    // Fast tick for the playhead bar; the full model refresh runs on every
+    // eighth tick (~260 ms), same cadence as before.
+    startTimer (33);
 
     setResizable (true, true);
     setResizeLimits (940, 600, 1700, 1080);
@@ -119,6 +122,7 @@ void OrchaAudioProcessorEditor::refresh()
     }
 
     const bool canGenerate = processor.anySampleLoaded();
+    strip.setPitchEnabled (processor.isPitchEnabled());
     strip.setGenerateEnabled (canGenerate && ! processor.isGenerating(),
                               processor.isGenerating());
     generateMoreButton.setEnabled (canGenerate && ! processor.isGenerating());
@@ -128,9 +132,17 @@ void OrchaAudioProcessorEditor::refresh()
 
 void OrchaAudioProcessorEditor::timerCallback()
 {
-    // Playback position / playing flag changes do not push notifications;
-    // a slow poll keeps the play states honest without repaint storms.
-    refresh();
+    // Every tick: move the playhead on the playing card (cheap - cached
+    // waveform image, clipped repaint). Every 8th tick: full model refresh.
+    const int playing = processor.playingOption();
+    if (playing >= 0 && playing < OrchaAudioProcessor::numOptions)
+        optionCards[(size_t) playing]->setPlayhead (processor.previewFraction());
+
+    if (++slowTick >= 8)
+    {
+        slowTick = 0;
+        refresh();
+    }
 }
 
 void OrchaAudioProcessorEditor::paint (juce::Graphics& g)

@@ -35,6 +35,18 @@ GenerationStrip::GenerationStrip()
     densityKnob.setValue (0.5, juce::dontSendNotification);
     randomnessKnob.setValue (0.3, juce::dontSendNotification);
 
+    // The global pitch switch: on by default; off renders every loop without
+    // pitch moves (countdowns, rising rolls, random detunes).
+    pitchButton.setClickingTogglesState (true);
+    pitchButton.setToggleState (true, juce::dontSendNotification);
+    pitchButton.setColour (juce::TextButton::buttonOnColourId, theme::amber);
+    pitchButton.onClick = [this]
+    {
+        if (onPitchToggle)
+            onPitchToggle (pitchButton.getToggleState());
+    };
+    addAndMakeVisible (pitchButton);
+
     generateButton.setColour (juce::TextButton::buttonColourId, theme::amber);
     generateButton.setColour (juce::TextButton::textColourOffId, juce::Colours::black);
     generateButton.onClick = [this] { if (onGenerate) onGenerate(); };
@@ -150,6 +162,7 @@ void GenerationStrip::resized()
     auto generateArea = area.removeFromRight (juce::jmax (160, area.getWidth() * 26 / 100));
     generateButton.setBounds (generateArea.reduced (4, 2));
 
+    pitchButton.setBounds (area.removeFromRight (56).reduced (2, 8));
     auto barsArea = area.removeFromRight (168);
     const int barW = barsArea.getWidth() / 3;
     for (auto* b : { &bars1, &bars2, &bars4 })

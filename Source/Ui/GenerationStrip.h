@@ -15,6 +15,9 @@ public:
 
     std::function<void()> onSettingsChanged;   // any control moved
     std::function<void()> onGenerate;
+    std::function<void (bool)> onPitchToggle;  // the global PITCH switch
+
+    void setPitchEnabled (bool on) { pitchButton.setToggleState (on, juce::dontSendNotification); }
 
     void setSettings (const GeneratorSettings& s);
     GeneratorSettings getSettings() const;
@@ -37,6 +40,7 @@ private:
                      cinematicChip { "CINEMATIC" }, hybridChip { "HYBRID" };
     juce::Slider energyKnob, densityKnob, randomnessKnob;
     juce::TextButton bars1 { "1 BAR" }, bars2 { "2 BARS" }, bars4 { "4 BARS" };
+    juce::TextButton pitchButton { "PITCH" };
     juce::TextButton generateButton { "GENERATE LOOPS" };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (GenerationStrip)

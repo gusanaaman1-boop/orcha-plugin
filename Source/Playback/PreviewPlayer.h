@@ -31,6 +31,9 @@ struct PreviewPlayer
 
     // Which option is sounding right now (-1 = none). Any thread.
     int playingOption() const { return playingIndex.load (std::memory_order_relaxed); }
+    // Where inside the loop playback is, 0..1. Any thread; drives the
+    // playhead bar on the playing card.
+    float playbackFraction() const { return fraction.load (std::memory_order_relaxed); }
 
     // Audio thread only.
     void process (juce::AudioBuffer<float>& out, double hostPpq, bool hostPlaying,
@@ -45,6 +48,7 @@ private:
     double phase = 0.0;             // samples into the loop, audio thread only
     double startAtPpq = -1.0;       // wait for this bar line; -1 = play now
     std::atomic<int> playingIndex { -1 };
+    std::atomic<float> fraction { 0.0f };
 };
 
 } // namespace orcha

@@ -11,7 +11,8 @@ juce::File RenderCache::cacheDirectory()
     return dir;
 }
 
-juce::File RenderCache::fileFor (const Pattern& p, double bpm, double sampleRate)
+juce::File RenderCache::fileFor (const Pattern& p, double bpm, double sampleRate,
+                                 bool pitchEnabled)
 {
     // The name carries the full identity: seed, settings, tempo, rate, bars.
     juce::String id;
@@ -26,7 +27,8 @@ juce::File RenderCache::fileFor (const Pattern& p, double bpm, double sampleRate
        << juce::roundToInt (p.settings.density * 100.0f) << '_'
        << juce::roundToInt (p.settings.randomness * 100.0f)
        << "_r" << juce::roundToInt (p.fxReverb * 100.0f)
-       << "_d" << juce::roundToInt (p.fxDelay * 100.0f);
+       << "_d" << juce::roundToInt (p.fxDelay * 100.0f)
+       << (pitchEnabled ? "" : "_np") << "_a" << p.algo;
 
     // Cubase shows the file name in the pool - keep it meaningful first.
     return cacheDirectory().getChildFile ("ORCHA_" + juce::String (modeName (p.settings.mode))
@@ -36,9 +38,9 @@ juce::File RenderCache::fileFor (const Pattern& p, double bpm, double sampleRate
 }
 
 juce::File RenderCache::write (const juce::AudioBuffer<float>& buffer, const Pattern& p,
-                               double bpm, double sampleRate)
+                               double bpm, double sampleRate, bool pitchEnabled)
 {
-    const auto file = fileFor (p, bpm, sampleRate);
+    const auto file = fileFor (p, bpm, sampleRate, pitchEnabled);
     if (file.existsAsFile())
         return file;
 

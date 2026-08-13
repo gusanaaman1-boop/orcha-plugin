@@ -611,9 +611,12 @@ Pattern LoopGenerator::generateV2 (juce::uint64 motifSeed, juce::uint64 ornament
                 continue;
             if (traj.at (traj.space, seg) > 0.7f)
                 continue;
+            // Space-aware texture: a phrase that wants air gets fewer ghosts
+            // everywhere, not only in its planned quiet segments.
             const float ghostP = style.ghostiness
                 * (0.18f + 0.45f * settings.density)
-                * traj.at (traj.density, seg) * roleBudget (role);
+                * traj.at (traj.density, seg) * roleBudget (role)
+                * (1.0f - 0.5f * feel.space);
             if (stepOccupied (p.events, pos) || ! rng.chance (ghostP))
                 continue;
             Event g;
@@ -622,6 +625,32 @@ Pattern LoopGenerator::generateV2 (juce::uint64 motifSeed, juce::uint64 ornament
             g.velocity = 0.10f + 0.15f * rng.uni();
             g.gateSteps = 0.5;
             p.events.push_back (g);
+        }
+    }
+
+    // --- 4b. pocket holes: rhythm needs moments of nothing ---------------------
+    // A deliberate empty half-beat (or two, in long loops) carved into the
+    // decoration - part of the groove's identity (motif stream), so every
+    // take breathes in the same places. Anchors are never touched.
+    {
+        const int holes = juce::jmax (1, bars / 2);
+        for (int h = 0; h < holes; ++h)
+        {
+            if (! rngM.chance (0.3f + 0.4f * feel.space))
+                continue;
+            const double holeStart = 2.0 + 4.0 * rngM.pick (bars * 4 - 1);
+            // The question and the answer own their shapes - holes land in
+            // the plain segments, never inside a Call or Response cell.
+            const auto holeRole = segRole (segOf (holeStart));
+            if (holeRole == PhraseRole::Call || holeRole == PhraseRole::Response)
+                continue;
+            p.events.erase (std::remove_if (p.events.begin(), p.events.end(),
+                [holeStart] (const Event& e)
+                {
+                    return ! e.protectedAnchor && ! e.roll
+                        && e.pos >= holeStart && e.pos < holeStart + 2.0;
+                }),
+                p.events.end());
         }
     }
 
