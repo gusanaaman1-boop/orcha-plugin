@@ -231,6 +231,69 @@ int main (int argc, char* argv[])
             std::cout << "FUZZ OK\n";   // reaching here = no crash, no hang
         }
 
+        // --- B4: the favorites chain, end to end -------------------------------
+        {
+            int chainFailures = 0;
+            // Exactly two hearts, one of them wet, so the phrase exercises
+            // the tail that has to cross the card boundary. Earlier sections
+            // favorited other cards; the chain is whatever is hearted NOW.
+            for (int i = 0; i < OrchaAudioProcessor::numOptions; ++i)
+                if (processor->option (i).favorite)
+                    processor->toggleFavorite (i);
+            processor->setOptionFx (0, 0.7f, 0.3f, 0.0f);
+            pumpUntil ([&] { return processor->option (0).ready; }, 15000);
+            for (int i : { 0, 1 })
+                processor->toggleFavorite (i);
+            pumpUntil ([&] { return ! processor->isGenerating(); }, 15000);
+
+            const auto chainFile = processor->ensureChainWav();
+            if (! chainFile.existsAsFile())
+            {
+                std::cout << "CHAIN FAIL: no chain file\n";
+                ++chainFailures;
+            }
+            else
+            {
+                juce::AudioFormatManager fm;
+                fm.registerBasicFormats();
+                std::unique_ptr<juce::AudioFormatReader> reader (
+                    fm.createReaderFor (chainFile));
+                if (reader == nullptr)
+                {
+                    std::cout << "CHAIN FAIL: chain wav unreadable\n";
+                    ++chainFailures;
+                }
+                else
+                {
+                    const int expected =
+                        processor->option (0).loop->buffer.getNumSamples()
+                        + processor->option (1).loop->buffer.getNumSamples();
+                    if ((int) reader->lengthInSamples != expected)
+                    {
+                        std::cout << "CHAIN FAIL: length " << reader->lengthInSamples
+                                  << " expected " << expected << "\n";
+                        ++chainFailures;
+                    }
+                    juce::AudioBuffer<float> chainBuf (2, (int) reader->lengthInSamples);
+                    reader->read (&chainBuf, 0, (int) reader->lengthInSamples, 0, true, true);
+                    if (chainBuf.getMagnitude (0, chainBuf.getNumSamples()) <= 0.0f)
+                        { std::cout << "CHAIN FAIL: silent chain\n"; ++chainFailures; }
+                }
+            }
+            // Un-hearting one card must invalidate the phrase, not reuse it.
+            processor->toggleFavorite (1);
+            if (processor->ensureChainWav().existsAsFile())
+            {
+                std::cout << "CHAIN FAIL: one favorite still produced a chain\n";
+                ++chainFailures;
+            }
+            processor->toggleFavorite (1);
+            processor->setOptionFx (0, 0.0f, 0.0f, 0.0f);
+            pumpUntil ([&] { return processor->option (0).ready; }, 15000);
+            failures += chainFailures;
+            std::cout << (chainFailures == 0 ? "CHAIN OK" : "CHAIN FAILED") << "\n";
+        }
+
         // --- F3: reliability scenarios the mac can prove -----------------------
         {
             int relFailures = 0;

@@ -8,27 +8,16 @@ namespace orcha
 
 namespace
 {
-    // Gentle, fixed-amount per-card effects, baked into the loop. The trick
-    // that keeps the loop seamless: process TWO passes of the loop through
-    // the effect and keep the second - the first pass's tail wraps into it,
-    // so the loop start already carries the reverb/delay of the loop end.
-    void applyLoopFx (juce::AudioBuffer<float>& loop, double sampleRate, double bpm,
-                      float reverbAmt, float delayAmt)
+    // The effects themselves, straight through the given buffer: whatever
+    // tail they generate lands wherever the buffer still has room. Callers
+    // decide what that room means - a second loop pass (a loop that must be
+    // seamless) or trailing silence (a card inside a chain, whose tail
+    // belongs to the card that follows it).
+    void processFx (juce::AudioBuffer<float>& twice, double sampleRate, double bpm,
+                    float reverbAmt, float delayAmt)
     {
-        reverbAmt = juce::jlimit (0.0f, 1.0f, reverbAmt);
-        delayAmt = juce::jlimit (0.0f, 1.0f, delayAmt);
         const bool reverb = reverbAmt > 0.01f;
         const bool delay = delayAmt > 0.01f;
-        if (! reverb && ! delay)
-            return;
-
-        const int len = loop.getNumSamples();
-        juce::AudioBuffer<float> twice (2, len * 2);
-        for (int ch = 0; ch < 2; ++ch)
-        {
-            twice.copyFrom (ch, 0, loop, ch, 0, len);
-            twice.copyFrom (ch, len, loop, ch, 0, len);
-        }
 
         if (delay)
         {
@@ -74,7 +63,28 @@ namespace
             verb.processStereo (twice.getWritePointer (0), twice.getWritePointer (1),
                                 twice.getNumSamples());
         }
+    }
 
+    // Per-card effects baked into a loop that has to stay seamless. The trick:
+    // process TWO passes of the loop and keep the second - the first pass's
+    // tail wraps into it, so the loop start already carries the reverb/delay
+    // of the loop end.
+    void applyLoopFx (juce::AudioBuffer<float>& loop, double sampleRate, double bpm,
+                      float reverbAmt, float delayAmt)
+    {
+        reverbAmt = juce::jlimit (0.0f, 1.0f, reverbAmt);
+        delayAmt = juce::jlimit (0.0f, 1.0f, delayAmt);
+        if (reverbAmt <= 0.01f && delayAmt <= 0.01f)
+            return;
+
+        const int len = loop.getNumSamples();
+        juce::AudioBuffer<float> twice (2, len * 2);
+        for (int ch = 0; ch < 2; ++ch)
+        {
+            twice.copyFrom (ch, 0, loop, ch, 0, len);
+            twice.copyFrom (ch, len, loop, ch, 0, len);
+        }
+        processFx (twice, sampleRate, bpm, reverbAmt, delayAmt);
         for (int ch = 0; ch < 2; ++ch)
             loop.copyFrom (ch, 0, twice, ch, len, len);
     }
@@ -281,6 +291,76 @@ juce::AudioBuffer<float> LoopRenderer::render (const Pattern& pattern, const Con
     if (peak > ceiling && peak > 0.0f)
         out.applyGain (ceiling / peak);
 
+    return out;
+}
+
+juce::AudioBuffer<float> LoopRenderer::renderChain (
+    const std::vector<const Pattern*>& patterns, const Context& ctx)
+{
+    if (patterns.size() < 2)
+        return { 2, 0 };
+
+    // Every card rendered DRY: its own pump and its own headroom gain stay,
+    // but reverb and delay are held back so they can be applied here, on the
+    // chain timeline, where they have somewhere to spill to.
+    std::vector<juce::AudioBuffer<float>> dry;
+    std::vector<int> offset;
+    int total = 0;
+    for (const auto* p : patterns)
+    {
+        Pattern noFx = *p;
+        noFx.fxReverb = 0.0f;
+        noFx.fxDelay = 0.0f;
+        dry.push_back (render (noFx, ctx));
+        offset.push_back (total);
+        total += dry.back().getNumSamples();
+    }
+    if (total <= 0)
+        return { 2, 0 };
+
+    // Room for the last tail to decay before it wraps back to the top. Two
+    // seconds covers the largest room and the dotted-8th feedback, and never
+    // more than the phrase itself, so the wrap can never overlap twice.
+    const int tail = juce::jmin ((int) (ctx.sampleRate * 2.0), total / 2);
+
+    juce::AudioBuffer<float> chain (2, total + tail);
+    chain.clear();
+    juce::AudioBuffer<float> work (2, 0);
+    for (size_t i = 0; i < dry.size(); ++i)
+    {
+        const int len = dry[i].getNumSamples();
+        const float r = juce::jlimit (0.0f, 1.0f, patterns[i]->fxReverb);
+        const float d = juce::jlimit (0.0f, 1.0f, patterns[i]->fxDelay);
+        if (r <= 0.01f && d <= 0.01f)
+        {
+            for (int ch = 0; ch < 2; ++ch)
+                chain.addFrom (ch, offset[i], dry[i], ch, 0, len);
+            continue;
+        }
+        // The card plus empty room after it: the effect decays into that room,
+        // and the whole thing is added on top of whatever comes next.
+        work.setSize (2, len + tail, false, false, true);
+        work.clear();
+        for (int ch = 0; ch < 2; ++ch)
+            work.copyFrom (ch, 0, dry[i], ch, 0, len);
+        processFx (work, ctx.sampleRate, ctx.bpm, r, d);
+        for (int ch = 0; ch < 2; ++ch)
+            chain.addFrom (ch, offset[i], work, ch, 0,
+                           juce::jmin (work.getNumSamples(), chain.getNumSamples() - offset[i]));
+    }
+
+    // Fold the overhanging tail back onto the phrase start: the chain loops.
+    juce::AudioBuffer<float> out (2, total);
+    for (int ch = 0; ch < 2; ++ch)
+    {
+        out.copyFrom (ch, 0, chain, ch, 0, total);
+        out.addFrom (ch, 0, chain, ch, total, tail);
+    }
+
+    const float peak = out.getMagnitude (0, total);
+    const float ceiling = juce::Decibels::decibelsToGain (-1.0f);
+    if (peak > ceiling && peak > 0.0f)
+        out.applyGain (ceiling / peak);
     return out;
 }
 

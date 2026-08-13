@@ -4,6 +4,7 @@
 #include "Model/InputSample.h"
 #include "Engine/Pattern.h"
 #include "Engine/SampleTransform.h"
+#include "Engine/LoopRenderer.h"
 #include "Playback/PreviewPlayer.h"
 
 namespace orcha
@@ -76,6 +77,8 @@ public:
     // Phase B4 - render every FAVORITED card, in slot order, into one
     // seamless chain WAV; returns the file (invalid if <2 favorites).
     juce::File ensureChainWav();
+    // Renders that same phrase on the pool, so DRAG CHAIN finds it ready.
+    void prepareChainAsync();
     // Variation: keeps the card's motif seed (same groove) and re-rolls only
     // the ornament seed. A card that was never generated gets both fresh.
     // Discards manual edits - a fresh take starts from the generator.
@@ -96,7 +99,7 @@ public:
     // A8 - ENDING override: -1 AUTO, else a forced Destination. Regenerates
     // only the transition behavior; the card's identity survives.
     void setOptionEnding (int index, int endingOverride);
-    void toggleFavorite (int index)     { options[(size_t) index].favorite = ! options[(size_t) index].favorite; notifyModel(); }
+    void toggleFavorite (int index);
     void togglePlay (int index);
     bool anySampleLoaded() const;
     bool isGenerating() const           { return pendingJobs.load() > 0; }
@@ -162,6 +165,17 @@ private:
     // projects keep 1 (the frozen engine); new generations use 2.
     struct SeedPair { juce::uint64 motif = 0, orn = 0; int algo = 2; int dest = 0;
                       int modeOv = -1; };   // B1: per-card section override
+
+    // Everything the chain render needs, copied off the message thread so the
+    // pool can work on it while the user keeps editing.
+    struct ChainJob
+    {
+        std::vector<Pattern> patterns;
+        LoopRenderer::Context ctx;
+        juce::File file;
+    };
+    ChainJob currentChain() const;
+    static juce::File renderChainJob (const ChainJob& job);
 
     std::vector<InputSample::Ptr> samples { numSlots, nullptr };   // transformed
     std::vector<InputSample::Ptr> rawSamples { numSlots, nullptr };

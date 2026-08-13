@@ -385,46 +385,100 @@ void OrchaAudioProcessor::makeTransition (int index, int target)
     applyEditedPattern (index, std::move (transition));
 }
 
-juce::File OrchaAudioProcessor::ensureChainWav()
+OrchaAudioProcessor::ChainJob OrchaAudioProcessor::currentChain() const
 {
     // The hearts define the chain: every favorited, ready card in slot
     // order becomes one seamless phrase.
-    std::vector<const Option*> chain;
+    ChainJob job;
+    juce::String id;
     for (const auto& opt : options)
         if (opt.favorite && opt.present && opt.ready && opt.loop != nullptr)
-            chain.push_back (&opt);
-    if (chain.size() < 2)
+        {
+            job.patterns.push_back (opt.pattern);
+            id << juce::String::toHexString ((juce::int64) opt.pattern.seed) << '_'
+               << juce::String::toHexString ((juce::int64) opt.pattern.ornamentSeed)
+               << '_' << opt.fxReverb << '_' << opt.fxDelay << '_' << opt.fxPump << '_';
+        }
+    if (job.patterns.size() < 2)
         return {};
 
-    int total = 0;
-    for (auto* o : chain)
-        total += o->loop->buffer.getNumSamples();
-    juce::AudioBuffer<float> joined (2, total);
-    int at = 0;
-    juce::String id;
-    for (auto* o : chain)
+    id << juce::String (bpmAtomic.load(), 3) << '_' << srAtomic.load()
+       << (pitchEnabled ? "_p" : "_n");
+    // CHAIN2: the phrase is rendered as one timeline so each card's reverb
+    // and delay tail crosses into the card after it. Older CHAIN_ files were
+    // plain concatenations - a different sound, so a different name.
+    job.file = RenderCache::cacheDirectory().getChildFile (
+        "ORCHA_CHAIN2_" + juce::String::toHexString (id.hashCode64()) + ".wav");
+    job.ctx.sampleRate = srAtomic.load();
+    job.ctx.bpm = bpmAtomic.load();
+    job.ctx.samples = samples;
+    job.ctx.roleMap = roleMap;
+    job.ctx.pitchEnabled = pitchEnabled;
+    return job;
+}
+
+// Worker or message thread; pure function of the job.
+juce::File OrchaAudioProcessor::renderChainJob (const ChainJob& job)
+{
+    if (job.patterns.size() < 2 || job.file == juce::File())
+        return {};
+    if (job.file.existsAsFile())
+        return job.file;
+
+    std::vector<const Pattern*> ptrs;
+    for (const auto& p : job.patterns)
+        ptrs.push_back (&p);
+    auto joined = LoopRenderer::renderChain (ptrs, job.ctx);
+    if (joined.getNumSamples() == 0)
+        return {};
+
+    // Written to a sibling first: a half-written chain must never be picked
+    // up as a cache hit by the next drag. The scratch name is unique per
+    // render because the background pass and a drag that overtook it can be
+    // building the same phrase on two threads at once - whoever lands first
+    // wins the move, and the loser finds the finished file and uses it.
+    static std::atomic<int> scratchCounter { 0 };
+    const auto tmp = job.file.getSiblingFile (
+        job.file.getFileNameWithoutExtension() + "_"
+        + juce::String (scratchCounter.fetch_add (1)) + ".part");
+    tmp.deleteFile();
     {
-        for (int ch = 0; ch < 2; ++ch)
-            joined.copyFrom (ch, at, o->loop->buffer, ch, 0,
-                             o->loop->buffer.getNumSamples());
-        at += o->loop->buffer.getNumSamples();
-        id << juce::String::toHexString ((juce::int64) o->pattern.seed) << '_';
+        juce::WavAudioFormat wav;
+        std::unique_ptr<juce::FileOutputStream> stream (tmp.createOutputStream());
+        if (stream == nullptr)
+            return {};
+        std::unique_ptr<juce::AudioFormatWriter> writer (
+            wav.createWriterFor (stream.get(), job.ctx.sampleRate, 2, 24, {}, 0));
+        if (writer == nullptr)
+            return {};
+        stream.release();
+        writer->writeFromAudioSampleBuffer (joined, 0, joined.getNumSamples());
     }
-    const auto file = RenderCache::cacheDirectory().getChildFile (
-        "ORCHA_CHAIN_" + juce::String::toHexString (id.hashCode64()) + ".wav");
-    if (file.existsAsFile())
-        return file;
-    juce::WavAudioFormat wav;
-    std::unique_ptr<juce::FileOutputStream> stream (file.createOutputStream());
-    if (stream == nullptr)
-        return {};
-    std::unique_ptr<juce::AudioFormatWriter> writer (
-        wav.createWriterFor (stream.get(), srAtomic.load(), 2, 24, {}, 0));
-    if (writer == nullptr)
-        return {};
-    stream.release();
-    writer->writeFromAudioSampleBuffer (joined, 0, joined.getNumSamples());
-    return file;
+    if (! tmp.moveFileTo (job.file))
+    {
+        tmp.deleteFile();
+        return job.file.existsAsFile() ? job.file : juce::File();
+    }
+    return job.file;
+}
+
+void OrchaAudioProcessor::prepareChainAsync()
+{
+    // The phrase is rendered the moment the favorites change, not when the
+    // user starts dragging: twelve wet four-bar cards take ~115 ms, and a
+    // stall that lands on mouse-down can lose the drag gesture itself.
+    auto job = currentChain();
+    if (job.patterns.size() < 2 || job.file.existsAsFile())
+        return;
+    juce::WeakReference<OrchaAudioProcessor> self (this);
+    pool.addJob ([self, job] { if (self != nullptr) renderChainJob (job); });
+}
+
+juce::File OrchaAudioProcessor::ensureChainWav()
+{
+    // Normally the background pass already left the file on disk; if the drag
+    // beat it there, render it now rather than hand back nothing.
+    return renderChainJob (currentChain());
 }
 
 void OrchaAudioProcessor::cleanOption (int index, int strength)
@@ -713,10 +767,24 @@ void OrchaAudioProcessor::enqueueBuild (std::vector<int> indices,
         pendingJobs.fetch_sub (1);
         juce::MessageManager::callAsync ([self]
         {
-            if (self != nullptr)
-                self->notifyModel();
+            if (self == nullptr)
+                return;
+            self->notifyModel();
+            // The batch is in: if it touched a favorite, the phrase changed.
+            if (! self->isGenerating())
+                self->prepareChainAsync();
         });
     });
+}
+
+void OrchaAudioProcessor::toggleFavorite (int index)
+{
+    if (index < 0 || index >= numOptions)
+        return;
+    auto& opt = options[(size_t) index];
+    opt.favorite = ! opt.favorite;
+    notifyModel();
+    prepareChainAsync();
 }
 
 void OrchaAudioProcessor::rerenderAtCurrentTempo()

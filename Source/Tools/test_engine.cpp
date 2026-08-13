@@ -1823,6 +1823,112 @@ int main()
         check (ms < 4000.0, "12-card render inside budget");
     }
 
+    // === B4: chained phrase - FX tails must cross the card boundary ==============
+    {
+        LoopRenderer::Context ctx;
+        ctx.sampleRate = sr;
+        ctx.bpm = 125.0;
+        ctx.samples = { makeHit (60.0, sr, 0.4), makeHit (800.0, sr, 0.2),
+                        makeHit (4000.0, sr, 0.15) };
+        ctx.roleMap = SampleAnalyzer::assignRoles (ctx.samples);
+        GeneratorSettings s;
+        s.bars = 1;
+
+        auto makeCard = [&] (int i, float reverb)
+        {
+            auto p = PatternValidator::validate (LoopGenerator::generateV2 (
+                LoopGenerator::deriveSeed (0xB4C4, i),
+                LoopGenerator::deriveSeed (0x4C4B, i), s));
+            p.fxReverb = reverb;
+            return p;
+        };
+
+        // Card one drenched, card two bone dry: any wet energy at the top of
+        // card two can only have come across the boundary.
+        const auto wetCard = makeCard (0, 0.9f);
+        const auto dryCard = makeCard (1, 0.0f);
+        const std::vector<const Pattern*> pair { &wetCard, &dryCard };
+        const auto chained = LoopRenderer::renderChain (pair, ctx);
+        const int cardLen = LoopRenderer::render (dryCard, ctx).getNumSamples();
+        check (chained.getNumSamples() == cardLen * 2, "chain length is the sum");
+        check (LoopRenderer::renderChain ({ &wetCard }, ctx).getNumSamples() == 0,
+               "a chain needs at least two cards");
+
+        // The same phrase with card one dry as well. Card two is identical
+        // audio in both, so the tail is measured where card two is quietest -
+        // a gap between its own hits, where anything audible arrived from the
+        // card before it. Each phrase is normalized against its own peak,
+        // which is all the -1 dBFS ceiling leaves free to differ.
+        const auto dryFirst = makeCard (0, 0.0f);
+        const std::vector<const Pattern*> dryPair { &dryFirst, &dryCard };
+        const auto allDry = LoopRenderer::renderChain (dryPair, ctx);
+        const auto plainSecond = LoopRenderer::render (dryCard, ctx);
+        const int probe = (int) (sr * 0.02);
+        int gapAt = 0;
+        float quietest = 1.0f;
+        for (int at = 0; at + probe < juce::jmin (cardLen, (int) (sr * 0.5)); at += probe)
+            if (const float m = plainSecond.getMagnitude (at, probe); m < quietest)
+            {
+                quietest = m;
+                gapAt = at;
+            }
+        auto levelInGap = [&] (const juce::AudioBuffer<float>& b)
+        {
+            const float peak = b.getMagnitude (0, b.getNumSamples());
+            return peak > 0.0f ? b.getMagnitude (cardLen + gapAt, probe) / peak : 0.0f;
+        };
+        check (levelInGap (chained) > levelInGap (allDry) * 1.5f,
+               "reverb tail crosses into the next card");
+
+        // ...and the phrase still loops: the last card's tail wrapped round to
+        // the top, so the chain start differs from the lone first card.
+        const auto plainFirst = LoopRenderer::render (wetCard, ctx);
+        float headDiff = 0.0f;
+        for (int i = 0; i < juce::jmin (1000, cardLen); ++i)
+            headDiff = juce::jmax (headDiff,
+                std::abs (chained.getSample (0, i) - plainFirst.getSample (0, i)));
+        check (headDiff > 0.0f, "chain start carries the wrapped tail");
+
+        // Ceiling holds for the whole phrase, tails included.
+        check (chained.getMagnitude (0, chained.getNumSamples())
+                   <= juce::Decibels::decibelsToGain (-1.0f) + 1.0e-4f,
+               "chained phrase respects the -1 dBFS ceiling");
+
+        // Determinism: same cards, same context, byte-identical phrase.
+        const auto again = LoopRenderer::renderChain (pair, ctx);
+        float drift = 0.0f;
+        for (int i = 0; i < chained.getNumSamples(); ++i)
+            drift = juce::jmax (drift,
+                std::abs (chained.getSample (0, i) - again.getSample (0, i)));
+        check (drift == 0.0f, "chain render is deterministic");
+
+        // Worst case a user can build: all twelve cards favorited, four bars
+        // each, every one of them wet. This runs when DRAG CHAIN is pressed.
+        GeneratorSettings big = s;
+        big.bars = 4;
+        std::vector<Pattern> heavy;
+        for (int i = 0; i < 12; ++i)
+        {
+            auto p = PatternValidator::validate (LoopGenerator::generateV2 (
+                LoopGenerator::deriveSeed (0xB16, i),
+                LoopGenerator::deriveSeed (0x61B, i), big));
+            p.fxReverb = 0.6f;
+            p.fxDelay = 0.5f;
+            heavy.push_back (std::move (p));
+        }
+        std::vector<const Pattern*> heavyPtrs;
+        for (const auto& p : heavy)
+            heavyPtrs.push_back (&p);
+        const auto t1 = juce::Time::getHighResolutionTicks();
+        const auto longChain = LoopRenderer::renderChain (heavyPtrs, ctx);
+        const double chainMs = juce::Time::highResolutionTicksToSeconds (
+            juce::Time::getHighResolutionTicks() - t1) * 1000.0;
+        std::cout << "  chain benchmark: 12 wet 4-bar cards in "
+                  << juce::String (chainMs, 1) << " ms\n";
+        check (longChain.getNumSamples() > 0, "long chain rendered");
+        check (chainMs < 2000.0, "worst-case chain inside budget");
+    }
+
     std::cout << (failures == 0 ? "ALL OK" : "FAILED") << " - "
               << checks << " checks, " << failures << " failures\n";
     return failures == 0 ? 0 : 1;
