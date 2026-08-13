@@ -656,6 +656,89 @@ int main()
         check (ghostSnares >= 24, "BREAKS keeps its ghost snares");
     }
 
+    // --- transition drama: BUILD countdown + gap, BREAK reverse swell ---------------
+    {
+        GeneratorSettings bld;
+        bld.mode = Mode::BUILD;
+        bld.energy = 0.8f;
+        int walks = 0, gaps = 0;
+        for (int i = 0; i < 48; ++i)
+        {
+            const auto p = PatternValidator::validate (LoopGenerator::generate (
+                LoopGenerator::deriveSeed (70707, i), bld));
+            // Countdown: >= 3 LOW anchors whose pitch strictly walks one way.
+            std::vector<int> pitches;
+            for (const auto& e : p.events)
+                if (e.role == Role::LOW && e.protectedAnchor
+                    && std::fmod (e.pos, 4.0) < 0.01)
+                    pitches.push_back (e.pitchSemis);
+            int down = 0, up = 0;
+            for (size_t k = 1; k < pitches.size(); ++k)
+            {
+                if (pitches[k] < pitches[k - 1]) ++down;
+                if (pitches[k] > pitches[k - 1]) ++up;
+            }
+            if (down >= 2 || up >= 2)
+                ++walks;
+            // Breath ending: nothing in the final 2 steps except one pickup.
+            int tailEvents = 0;
+            bool pickup = false;
+            for (const auto& e : p.events)
+                if (e.pos >= p.stepCount() - 2.0)
+                {
+                    ++tailEvents;
+                    pickup = pickup || (e.role == Role::LOW && e.velocity >= 0.99f);
+                }
+            if (tailEvents <= 1 && (tailEvents == 0 || pickup))
+                ++gaps;
+        }
+        check (walks >= 20, "BUILD pitch-walk countdown appears often");
+        check (gaps >= 8, "BUILD breath ending (1, 2... boom) appears");
+
+        GeneratorSettings brk;
+        brk.mode = Mode::BREAK;
+        int swells = 0;
+        for (int i = 0; i < 48; ++i)
+        {
+            const auto p = PatternValidator::validate (LoopGenerator::generate (
+                LoopGenerator::deriveSeed (80808, i), brk));
+            for (const auto& e : p.events)
+                if (e.reverse && e.role == Role::HIGH
+                    && e.pos > p.stepCount() - 4.5)
+                {
+                    ++swells;
+                    break;
+                }
+        }
+        check (swells >= 12, "BREAK reverse swell pulls into the loop point");
+
+        // The swell must survive rendering unchoked: audio present right
+        // before the loop end even when hats follow it.
+        LoopRenderer::Context ctx;
+        ctx.sampleRate = sr;
+        ctx.bpm = 120.0;
+        ctx.samples = { makeHit (60.0, sr, 0.4), makeHit (800.0, sr, 0.2),
+                        makeHit (4000.0, sr, 1.0) };
+        ctx.roleMap = SampleAnalyzer::assignRoles (ctx.samples);
+        Pattern sp;
+        sp.settings.bars = 1;
+        Event hat;
+        hat.pos = 14.0;
+        hat.role = Role::HIGH;
+        hat.velocity = 0.5f;
+        Event swell;
+        swell.pos = 12.25;
+        swell.role = Role::HIGH;
+        swell.reverse = true;
+        swell.gateSteps = 3.45;
+        swell.velocity = 0.7f;
+        sp.events = { swell, hat };
+        const auto sbuf = LoopRenderer::render (sp, ctx);
+        const int probeAt = (int) (sr * 1.9);   // step ~15.2 of a 2 s bar
+        check (sbuf.getMagnitude (probeAt, (int) (sr * 0.05)) > 0.02f,
+               "reverse swell rides past later hats unchoked");
+    }
+
     // --- variation preserves the motif ---------------------------------------------
     {
         // Same motif seed + different ornament seeds = same groove, another

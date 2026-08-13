@@ -167,8 +167,9 @@ juce::AudioBuffer<float> LoopRenderer::render (const Pattern& pattern, const Con
 
         // Hat choke: a HIGH hit ends when the next HIGH hit starts, plus a
         // short crossfade - the open/closed hi-hat behaviour that keeps busy
-        // top lines readable.
-        if (e.role == Role::HIGH)
+        // top lines readable. Reversed swells are transitions, not hats -
+        // they ride over the line unchoked.
+        if (e.role == Role::HIGH && ! e.reverse)
             for (size_t j = 0; j < pattern.events.size(); ++j)
                 if (pattern.events[j].role == Role::HIGH && starts[j] > startSample)
                     renderLen = juce::jmin (renderLen, starts[j] - startSample + fadeLen);

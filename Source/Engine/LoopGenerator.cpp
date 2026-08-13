@@ -269,7 +269,12 @@ Pattern LoopGenerator::generate (juce::uint64 motifSeed, juce::uint64 ornamentSe
     // --- 9. fills and rolls at the phrase end ---------------------------------
     const float fillP = juce::jlimit (0.0f, 0.95f,
         profile.fillChance + (settings.mode == Mode::DROP ? 0.25f * energy : 0.0f));
-    if (rng.chance (fillP))
+
+    // A BUILD can end two ways: rolling into the drop, or holding its breath
+    // ("1, 2... BOOM"). The choice is made first so the two never fight.
+    const bool gapEnding = settings.mode == Mode::BUILD && rng.chance (0.4f);
+
+    if (! gapEnding && rng.chance (fillP))
     {
         const Role rollRole = rng.chance (0.4f) ? Role::MID : Role::HIGH;
         const int rollSteps = 2 + rng.pick (settings.mode == Mode::BUILD ? 3 : 2);
@@ -298,12 +303,90 @@ Pattern LoopGenerator::generate (juce::uint64 motifSeed, juce::uint64 ornamentSe
             e.velocity = juce::jlimit (0.1f, 1.0f, 0.35f + 0.6f * t * (0.5f + 0.5f * energy));
             e.gateSteps = spacing;
             if (settings.mode == Mode::BUILD)
-                e.pitchSemis = (int) (t * 4.0f);   // rising tension
+                e.pitchSemis = (int) (t * (3.0f + 5.0f * energy));   // rising tension
             p.events.push_back (e);
 
             pos += spacing;
             if (accelerate)
                 spacing = juce::jmax (0.25, spacing * 0.8);
+        }
+    }
+
+    // --- transition drama -------------------------------------------------------
+    if (settings.mode == Mode::BUILD)
+    {
+        // The countdown: the last bar's LOW anchors become a pitch walk -
+        // four predictable kicks stepping down (or climbing) into the next
+        // downbeat. The drop everyone hears coming, on purpose.
+        if (rng.chance (0.65f))
+        {
+            const bool descending = rng.chance (0.6f);
+            std::vector<Event*> countdown;
+            for (auto& e : p.events)
+                if (e.role == Role::LOW && e.protectedAnchor
+                    && e.pos >= steps - 16 && std::fmod (e.pos, 4.0) < 0.01)
+                    countdown.push_back (&e);
+            const int n = (int) countdown.size();
+            for (int k = 0; k < n; ++k)
+            {
+                const float t = n > 1 ? (float) k / (float) (n - 1) : 1.0f;
+                const int walk = juce::roundToInt (t * (5.0f + 4.0f * energy));
+                countdown[(size_t) k]->pitchSemis += descending ? -walk : walk;
+                countdown[(size_t) k]->velocity =
+                    juce::jlimit (0.05f, 1.0f, 0.8f + 0.2f * t);
+            }
+        }
+
+        // "1, 2... BOOM": the breath ending - the tail empties, one accented
+        // pickup throws into the entrance.
+        if (gapEnding)
+        {
+            const double holeStart = steps - 2.0;
+            p.events.erase (std::remove_if (p.events.begin(), p.events.end(),
+                [holeStart] (const Event& e) { return e.pos >= holeStart; }),
+                p.events.end());
+            if (rng.chance (0.7f))
+            {
+                Event pickup;
+                pickup.pos = steps - 1.0;
+                pickup.role = Role::LOW;
+                pickup.velocity = 1.0f;
+                pickup.pitchSemis = rng.chance (0.4f) ? -2 : 0;
+                pickup.protectedAnchor = true;
+                p.events.push_back (pickup);
+            }
+        }
+    }
+
+    if (settings.mode == Mode::BREAK)
+    {
+        // A reversed swell in the last beat, sucked into the loop point -
+        // the tail of the brightest sample played backwards swells INTO the
+        // next downbeat.
+        if (rng.chance (0.45f))
+        {
+            Event swell;
+            swell.pos = steps - 3.75;   // its own 64th, clear of any grid hat
+            swell.role = Role::HIGH;
+            swell.reverse = true;
+            swell.gateSteps = 3.45;     // ends just before the boundary fade
+            swell.velocity = 0.5f + 0.25f * energy;
+            p.events.push_back (swell);
+        }
+        // One lone deep hit in the emptiness - dread, pitched down.
+        if (rng.chance (0.35f))
+        {
+            const double pos = 4.0 + rng.pick (juce::jmax (1, steps - 8));
+            if (! stepOccupied (p.events, pos))
+            {
+                Event deep;
+                deep.pos = pos;
+                deep.role = Role::LOW;
+                deep.velocity = 0.85f;
+                deep.pitchSemis = -5;
+                deep.gateSteps = 3.0;
+                p.events.push_back (deep);
+            }
         }
     }
 
