@@ -26,6 +26,14 @@ SampleCard::SampleCard (int slotIndex) : slot (slotIndex)
         addChildComponent (*b);
     }
 
+    // Phase E: this file sounds like a loop - offer to split it into a
+    // LOW/MID/HIGH kit across the three slots.
+    kitButton.setColour (juce::TextButton::buttonColourId, theme::panel);
+    kitButton.setColour (juce::TextButton::textColourOffId, theme::amberBright);
+    kitButton.setTooltip ("Slice this loop into a kit: LOW / MID / HIGH across the three slots");
+    kitButton.onClick = [this] { if (onSliceAsKit) onSliceAsKit(); };
+    addChildComponent (kitButton);
+
     addChildComponent (roleBox);
     int id = 1;
     for (auto role : { Role::AUTO, Role::LOW, Role::MID, Role::HIGH, Role::FX })
@@ -79,6 +87,8 @@ void SampleCard::resized()
     trimButton.setBounds (bottom.removeFromRight (44));
     bottom.removeFromRight (4);
     reverseButton.setBounds (bottom.removeFromRight (40));
+    bottom.removeFromRight (4);
+    kitButton.setBounds (bottom.removeFromRight (36));
 }
 
 void SampleCard::paint (juce::Graphics& g)

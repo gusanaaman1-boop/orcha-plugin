@@ -20,6 +20,8 @@ public:
     std::function<void (Role)> onRoleChange;
     std::function<void (SampleTransform::Settings)> onTransformChange;
     std::function<void()> onOpenEditor;   // click on the waveform
+    std::function<void()> onSliceAsKit;   // Phase E: split a loop into a kit
+    void setKitPossible (bool possible) { kitButton.setVisible (possible); }
 
     // nullptr = empty slot. loading = a decode job is in flight.
     void update (InputSample::Ptr sample, bool loading,
@@ -48,6 +50,7 @@ private:
 
     juce::TextButton removeButton { "X" };
     juce::TextButton reverseButton { "REV" }, trimButton { "TRIM" };
+    juce::TextButton kitButton { "KIT" };
     juce::ComboBox roleBox;
     std::unique_ptr<juce::FileChooser> chooser;
 

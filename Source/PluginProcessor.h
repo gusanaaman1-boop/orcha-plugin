@@ -51,6 +51,14 @@ public:
     SampleTransform::Settings getTransform (int slot) const { return transforms[(size_t) slot]; }
     void setTransform (int slot, SampleTransform::Settings t);
 
+    // Phase E - SLICE AS KIT: a dropped loop/stem becomes three slices
+    // (LOW/MID/HIGH) spread across the three slots via the existing
+    // non-destructive cut mechanism - so kits persist in state for free and
+    // the original file is never touched. Returns false on low confidence
+    // (fewer than 2 clean onsets) and changes nothing in that case.
+    bool canSliceAsKit (int slot) const;
+    bool sliceAsKit (int slot);
+
     GeneratorSettings settings;         // editor edits directly, then generates
 
     const Option& option (int index) const        { return options[(size_t) index]; }

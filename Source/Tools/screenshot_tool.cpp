@@ -202,6 +202,34 @@ int main (int argc, char* argv[])
         }
 
         std::cout << (failures == 0 ? "STATE OK" : "STATE FAILED") << "\n";
+
+        // --- F5: corrupted / truncated / garbage state must fail SAFELY --------
+        {
+            juce::MemoryBlock good;
+            processor->getStateInformation (good);
+            auto fuzzTarget = std::make_unique<OrchaAudioProcessor>();
+            fuzzTarget->prepareToPlay (48000.0, 512);
+            // Truncated at every eighth of its length.
+            for (int cut = 1; cut < 8; ++cut)
+                fuzzTarget->setStateInformation (good.getData(),
+                    (int) (good.getSize() * (size_t) cut / 8));
+            // Bit-flipped copy.
+            juce::MemoryBlock bad (good);
+            auto* bytes = static_cast<juce::uint8*> (bad.getData());
+            for (size_t i = 0; i < bad.getSize(); i += 7)
+                bytes[i] ^= 0x5A;
+            fuzzTarget->setStateInformation (bad.getData(), (int) bad.getSize());
+            // Pure garbage.
+            juce::MemoryBlock junk (513);
+            auto* j = static_cast<juce::uint8*> (junk.getData());
+            for (size_t i = 0; i < junk.getSize(); ++i)
+                j[i] = (juce::uint8) (i * 37 + 11);
+            fuzzTarget->setStateInformation (junk.getData(), (int) junk.getSize());
+            fuzzTarget->setStateInformation (nullptr, 0);
+            pumpUntil ([] { return false; }, 300);
+            fuzzTarget.reset();
+            std::cout << "FUZZ OK\n";   // reaching here = no crash, no hang
+        }
         editor.reset();
         processor.reset();
         restored.reset();

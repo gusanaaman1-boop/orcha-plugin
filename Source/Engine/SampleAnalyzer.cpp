@@ -194,4 +194,82 @@ RoleMap SampleAnalyzer::assignRoles (std::vector<InputSample::Ptr>& samples)
     return map;
 }
 
+std::vector<int> SampleAnalyzer::detectOnsets (const juce::AudioBuffer<float>& buffer,
+                                               double sampleRate)
+{
+    std::vector<int> onsets;
+    const int n = buffer.getNumSamples();
+    if (n == 0 || sampleRate <= 0.0)
+        return onsets;
+
+    // Smoothed rectified envelope; an onset is a rise well above the local
+    // floor, at least 90 ms after the previous one.
+    const float attack = 1.0f - std::exp (-1.0f / (float) (sampleRate * 0.002));
+    const float release = 1.0f - std::exp (-1.0f / (float) (sampleRate * 0.05));
+    float env = 0.0f, floorEnv = 0.0f;
+    float peak = 0.0f;
+    for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+        peak = juce::jmax (peak, buffer.getMagnitude (ch, 0, n));
+    if (peak < 1.0e-4f)
+        return onsets;
+    const int minGap = (int) (sampleRate * 0.09);
+    int last = -minGap;
+    for (int i = 0; i < n; ++i)
+    {
+        float x = 0.0f;
+        for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+            x = juce::jmax (x, std::abs (buffer.getSample (ch, i)));
+        env += (x - env) * (x > env ? attack : release);
+        floorEnv += (env - floorEnv) * 0.0005f;
+        if (env > peak * 0.18f && env > floorEnv * 2.2f && i - last >= minGap)
+        {
+            onsets.push_back (juce::jmax (0, i - (int) (sampleRate * 0.003)));
+            last = i;
+        }
+    }
+    return onsets;
+}
+
+std::vector<SampleAnalyzer::KitSlice> SampleAnalyzer::chooseKitSlices (
+    const juce::AudioBuffer<float>& buffer, double sampleRate)
+{
+    std::vector<KitSlice> out;
+    const auto onsets = detectOnsets (buffer, sampleRate);
+    if (onsets.size() < 2)
+        return out;   // low confidence: the caller falls back, no pretending
+
+    // Slice = onset to next onset (capped at 0.8 s), analyzed individually.
+    struct Cand { KitSlice slice; SampleAnalysis a; };
+    std::vector<Cand> cands;
+    const int n = buffer.getNumSamples();
+    for (size_t i = 0; i < onsets.size(); ++i)
+    {
+        const int from = onsets[i];
+        const int to = juce::jmin (n,
+            juce::jmin (i + 1 < onsets.size() ? onsets[i + 1] : n,
+                        from + (int) (sampleRate * 0.8)));
+        if (to - from < (int) (sampleRate * 0.03))
+            continue;
+        juce::AudioBuffer<float> sub (buffer.getNumChannels(), to - from);
+        for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+            sub.copyFrom (ch, 0, buffer, ch, from, to - from);
+        Cand c;
+        c.slice = { (float) from / (float) n, (float) to / (float) n };
+        c.a = analyze (sub, sampleRate);
+        if (c.a.transientStrength > 0.15f)
+            cands.push_back (std::move (c));
+    }
+    if (cands.size() < 2)
+        return out;
+
+    std::sort (cands.begin(), cands.end(), [] (const Cand& a, const Cand& b)
+    { return a.a.spectralCentroidHz < b.a.spectralCentroidHz; });
+    // Darkest -> LOW, brightest -> HIGH, most-middling -> MID.
+    out.push_back (cands.front().slice);
+    if (cands.size() >= 3)
+        out.push_back (cands[cands.size() / 2].slice);
+    out.push_back (cands.back().slice);
+    return out;
+}
+
 } // namespace orcha

@@ -31,6 +31,7 @@ OrchaAudioProcessorEditor::OrchaAudioProcessorEditor (OrchaAudioProcessor& p)
             editPanel.close();          // one room at a time
             samplePanel.openFor (i);
         };
+        card->onSliceAsKit = [this, i] { processor.sliceAsKit (i); };
         addAndMakeVisible (*card);
         sampleCards[(size_t) i] = std::move (card);
     }
@@ -138,6 +139,7 @@ void OrchaAudioProcessorEditor::refresh()
         if (sample != nullptr)
             loadStartedAt[(size_t) i] = 0;
         sampleCards[(size_t) i]->update (sample, loading, processor.getTransform (i));
+        sampleCards[(size_t) i]->setKitPossible (processor.canSliceAsKit (i));
     }
 
     const int playing = processor.playingOption();

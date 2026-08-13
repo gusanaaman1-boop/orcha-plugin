@@ -102,6 +102,37 @@ void OrchaAudioProcessor::setTransform (int slot, SampleTransform::Settings t)
     notifyModel();
 }
 
+bool OrchaAudioProcessor::canSliceAsKit (int slot) const
+{
+    if (slot < 0 || slot >= numSlots || rawSamples[(size_t) slot] == nullptr)
+        return false;
+    const auto& a = rawSamples[(size_t) slot]->analysis;
+    return ! a.isOneShot && a.durationSeconds > 1.0;
+}
+
+bool OrchaAudioProcessor::sliceAsKit (int slot)
+{
+    if (! canSliceAsKit (slot))
+        return false;
+    const auto src = rawSamples[(size_t) slot];
+    const auto slices = SampleAnalyzer::chooseKitSlices (src->buffer,
+                                                         src->sourceSampleRate);
+    if (slices.size() < 2)
+        return false;   // low confidence: nothing changes, no pretending
+
+    for (int t = 0; t < numSlots && t < (int) slices.size(); ++t)
+    {
+        rawSamples[(size_t) t] = src;
+        transforms[(size_t) t] = {};
+        transforms[(size_t) t].start = slices[(size_t) t].start;
+        transforms[(size_t) t].end = slices[(size_t) t].end;
+        samples[(size_t) t] = SampleTransform::apply (*src, transforms[(size_t) t]);
+    }
+    rolesChanged();
+    notifyModel();
+    return true;
+}
+
 void OrchaAudioProcessor::setUserRole (int slot, Role role)
 {
     if (auto& s = samples[(size_t) slot])

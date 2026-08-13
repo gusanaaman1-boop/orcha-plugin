@@ -1750,6 +1750,79 @@ int main()
                "the pump honors the ceiling");
     }
 
+    // === PHASE E: kit slicing =====================================================
+    {
+        // A synthetic "loop": kick, snare, hat, kick - with silence between.
+        juce::AudioBuffer<float> loopBuf (1, (int) (sr * 2.0));
+        loopBuf.clear();
+        auto putHit = [&] (double atSec, double freq, double lenSec)
+        {
+            const int at = (int) (atSec * sr);
+            for (int i = 0; i < (int) (lenSec * sr)
+                 && at + i < loopBuf.getNumSamples(); ++i)
+            {
+                const double t = i / sr;
+                loopBuf.addSample (0, at + i,
+                    (float) (std::sin (juce::MathConstants<double>::twoPi * freq * t)
+                             * std::exp (-t * 22.0) * 0.8));
+            }
+        };
+        putHit (0.05, 70.0, 0.35);
+        putHit (0.55, 900.0, 0.25);
+        putHit (1.05, 5000.0, 0.12);
+        putHit (1.55, 70.0, 0.35);
+
+        const auto onsets = SampleAnalyzer::detectOnsets (loopBuf, sr);
+        check ((int) onsets.size() >= 3, "onset detection finds the hits");
+        const auto slices = SampleAnalyzer::chooseKitSlices (loopBuf, sr);
+        check ((int) slices.size() >= 2, "kit slicing reaches confidence");
+        if (slices.size() >= 2)
+        {
+            // LOW slice must be darker than the HIGH slice.
+            auto centroidOf = [&] (const SampleAnalyzer::KitSlice& k)
+            {
+                const int from = (int) (k.start * (float) loopBuf.getNumSamples());
+                const int to = (int) (k.end * (float) loopBuf.getNumSamples());
+                juce::AudioBuffer<float> sub (1, juce::jmax (16, to - from));
+                sub.copyFrom (0, 0, loopBuf, 0, from, sub.getNumSamples());
+                return SampleAnalyzer::analyze (sub, sr).spectralCentroidHz;
+            };
+            check (centroidOf (slices.front()) < centroidOf (slices.back()),
+                   "kit slices order dark to bright");
+        }
+        // Low confidence input changes nothing: pure noise floor.
+        juce::AudioBuffer<float> flat (1, (int) sr);
+        flat.clear();
+        check (SampleAnalyzer::chooseKitSlices (flat, sr).empty(),
+               "no onsets means no pretended kit");
+    }
+
+    // === F4: render performance budget ============================================
+    {
+        LoopRenderer::Context ctx;
+        ctx.sampleRate = sr;
+        ctx.bpm = 125.0;
+        ctx.samples = { makeHit (60.0, sr, 0.4), makeHit (800.0, sr, 0.2),
+                        makeHit (4000.0, sr, 0.15) };
+        ctx.roleMap = SampleAnalyzer::assignRoles (ctx.samples);
+        GeneratorSettings s;
+        s.bars = 2;
+        const auto t0 = juce::Time::getHighResolutionTicks();
+        for (int i = 0; i < 12; ++i)
+        {
+            const auto p = PatternValidator::validate (LoopGenerator::generateV2 (
+                LoopGenerator::deriveSeed (0xF4, i),
+                LoopGenerator::deriveSeed (0x4F, i), s));
+            const auto buf = LoopRenderer::render (p, ctx);
+            check (buf.getNumSamples() > 0, "render benchmark produced audio");
+        }
+        const double ms = juce::Time::highResolutionTicksToSeconds (
+            juce::Time::getHighResolutionTicks() - t0) * 1000.0;
+        std::cout << "  render benchmark: 12 cards in "
+                  << juce::String (ms, 1) << " ms\n";
+        check (ms < 4000.0, "12-card render inside budget");
+    }
+
     std::cout << (failures == 0 ? "ALL OK" : "FAILED") << " - "
               << checks << " checks, " << failures << " failures\n";
     return failures == 0 ? 0 : 1;
