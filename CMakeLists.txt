@@ -6,7 +6,7 @@ if(APPLE)
     set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "" FORCE)
 endif()
 
-project(Orcha VERSION 0.1.0 LANGUAGES C CXX)
+project(Orcha VERSION 0.2.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -153,6 +153,7 @@ juce_add_console_app(OrchaTests PRODUCT_NAME "OrchaTests")
 juce_generate_juce_header(OrchaTests)
 target_sources(OrchaTests PRIVATE
     Source/Tools/test_engine.cpp
+    Source/Playback/PreviewPlayer.cpp
     ${ORCHA_ENGINE_SOURCES})
 target_include_directories(OrchaTests PUBLIC "${CMAKE_BINARY_DIR}/generated")
 target_compile_definitions(OrchaTests PUBLIC

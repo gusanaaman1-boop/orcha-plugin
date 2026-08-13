@@ -219,26 +219,36 @@ Pattern LoopGenerator::generate (juce::uint64 seed, const GeneratorSettings& set
         const Role rollRole = rng.chance (0.4f) ? Role::MID : Role::HIGH;
         const int rollSteps = 2 + rng.pick (settings.mode == Mode::BUILD ? 3 : 2);
         const double rollStart = steps - rollSteps;
-        // BUILD accelerates: 16ths -> 32nds. Others roll straight 32nds.
-        const double spacing = settings.mode == Mode::BUILD && rng.chance (0.5f) ? 0.5 : 0.5;
         // Clear the runway so the roll reads as one gesture.
         p.events.erase (std::remove_if (p.events.begin(), p.events.end(),
             [&] (const Event& e)
             { return e.pos >= rollStart && e.role == rollRole && ! e.protectedAnchor; }),
             p.events.end());
 
-        int idx = 0;
-        for (double pos = rollStart; pos < steps - 0.25; pos += spacing, ++idx)
+        // BUILD accelerates for real: the spacing shrinks hit by hit, 16ths
+        // tightening into 32nds - tension you can hear, not a straight grid.
+        // The other modes choose between straight 32nds and a triplet feel.
+        const bool accelerate = settings.mode == Mode::BUILD;
+        double spacing = accelerate ? 0.9
+                       : rng.chance (0.3f) ? 1.0 / 3.0 : 0.5;
+
+        double pos = rollStart;
+        while (pos < steps - 0.25)
         {
             Event e;
             e.pos = pos;
             e.role = rollRole;
+            e.roll = true;
             const float t = (float) (pos - rollStart) / (float) rollSteps;
             e.velocity = juce::jlimit (0.1f, 1.0f, 0.35f + 0.6f * t * (0.5f + 0.5f * energy));
             e.gateSteps = spacing;
             if (settings.mode == Mode::BUILD)
                 e.pitchSemis = (int) (t * 4.0f);   // rising tension
             p.events.push_back (e);
+
+            pos += spacing;
+            if (accelerate)
+                spacing = juce::jmax (0.25, spacing * 0.8);
         }
     }
 

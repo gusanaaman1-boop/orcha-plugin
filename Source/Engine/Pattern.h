@@ -47,6 +47,7 @@ struct Event
     bool   reverse = false;
     double gateSteps = 0.0;    // 0 = ring out; otherwise choke after N steps
     bool   protectedAnchor = false; // structural - validator must not remove
+    bool   roll = false;       // part of a fill gesture (tests + renderer hints)
 };
 
 // User-facing generation controls, captured at GENERATE time.

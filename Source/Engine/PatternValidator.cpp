@@ -15,13 +15,14 @@ Pattern PatternValidator::validate (Pattern p)
                                       || e.velocity <= 0.0f; }),
         p.events.end());
 
-    // Deduplicate (role, quantized 32nd) - keep the louder hit.
+    // Deduplicate (role, quantized 64th) - keep the louder hit. 64ths, not
+    // 32nds: triplet rolls sit a third of a step apart and must survive.
     std::map<std::pair<int, int>, size_t> seen;
     std::vector<Event> kept;
     kept.reserve (p.events.size());
     for (const auto& e : p.events)
     {
-        const auto key = std::make_pair ((int) e.role, juce::roundToInt (e.pos * 2.0));
+        const auto key = std::make_pair ((int) e.role, juce::roundToInt (e.pos * 4.0));
         auto it = seen.find (key);
         if (it == seen.end())
         {

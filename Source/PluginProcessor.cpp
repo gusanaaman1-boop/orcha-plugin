@@ -161,11 +161,12 @@ void OrchaAudioProcessor::enqueueBuild (std::vector<int> indices)
     }
 
     LoopRenderer::Context ctx;
-    ctx.sampleRate = lastSampleRate;
+    ctx.sampleRate = srAtomic.load();
     ctx.bpm = bpmAtomic.load();
     ctx.samples = samples;
     ctx.roleMap = roleMap;
     lastRenderBpm = ctx.bpm;
+    lastRenderSr = ctx.sampleRate;
 
     const auto settingsCopy = settings;
     const int gen = generation.load();
@@ -270,7 +271,7 @@ juce::File OrchaAudioProcessor::ensureWavFor (int index)
         return opt.wavFile;
     // Cache was evicted: the render is tiny, write it back synchronously.
     opt.wavFile = RenderCache::write (opt.loop->buffer, opt.pattern,
-                                      opt.loop->bpm, lastSampleRate);
+                                      opt.loop->bpm, srAtomic.load());
     return opt.wavFile;
 }
 
@@ -278,7 +279,9 @@ juce::File OrchaAudioProcessor::ensureWavFor (int index)
 
 void OrchaAudioProcessor::prepareToPlay (double sampleRate, int)
 {
-    lastSampleRate = sampleRate;
+    // The timer notices the change and re-renders; prepareToPlay itself may
+    // run off the message thread, so it only publishes the value.
+    srAtomic.store (sampleRate);
 }
 
 bool OrchaAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -316,10 +319,13 @@ void OrchaAudioProcessor::timerCallback()
 {
     preview.releaseRetired();
 
-    // Host tempo drifted from the rendered tempo: rebuild the audio (same
-    // patterns, same seeds) once the current batch is done.
+    // Host tempo or sample rate drifted from the rendered ones: rebuild the
+    // audio (same patterns, same seeds) once the current batch is done. A
+    // 44.1->48 kHz change without this played every loop at the wrong pitch
+    // and length.
     if (! isGenerating() && lastRenderBpm > 0.0
-        && std::abs (bpmAtomic.load() - lastRenderBpm) > 0.5)
+        && (std::abs (bpmAtomic.load() - lastRenderBpm) > 0.5
+            || std::abs (srAtomic.load() - lastRenderSr) > 1.0))
         rerenderAtCurrentTempo();
 }
 

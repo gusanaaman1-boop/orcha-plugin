@@ -29,11 +29,25 @@ void PreviewPlayer::process (juce::AudioBuffer<float>& out, double hostPpq,
         const juce::SpinLock::ScopedTryLockType sl (lock);
         if (sl.isLocked() && hasIncoming && outgoing == nullptr)
         {
+            const bool isNewLoop = incoming != nullptr
+                && (current == nullptr || incoming->optionIndex != current->optionIndex);
             outgoing = std::move (current);        // audio thread never frees
             current = std::move (incoming);
             incoming = nullptr;
             hasIncoming = false;
             phase = 0.0;
+
+            // While the host plays, a newly chosen loop waits for the next bar
+            // line instead of stumbling in mid-bar. Re-renders of the loop
+            // already playing keep going seamlessly; starting from silence or
+            // a stopped host is immediate.
+            if (isNewLoop && hostPlaying && hostPpq >= 0.0)
+            {
+                const double nextBar = std::ceil (hostPpq / 4.0) * 4.0;
+                startAtPpq = nextBar - hostPpq < 0.02 ? -1.0 : nextBar;
+            }
+            else
+                startAtPpq = -1.0;
         }
     }
 
@@ -43,6 +57,14 @@ void PreviewPlayer::process (juce::AudioBuffer<float>& out, double hostPpq,
         return;
     }
     playingIndex.store (current->optionIndex, std::memory_order_relaxed);
+
+    // Holding for the bar line. A stopped host cancels the wait.
+    if (startAtPpq >= 0.0)
+    {
+        if (hostPlaying && hostPpq >= 0.0 && hostPpq < startAtPpq)
+            return;
+        startAtPpq = -1.0;
+    }
 
     const auto& loop = current->buffer;
     const int loopLen = loop.getNumSamples();

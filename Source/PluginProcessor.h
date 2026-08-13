@@ -103,7 +103,8 @@ private:
     std::atomic<double> ppqAtomic { -1.0 };
     std::atomic<bool> playingAtomic { false };
     double lastRenderBpm = 0.0;             // message thread
-    double lastSampleRate = 48000.0;
+    double lastRenderSr = 0.0;              // message thread
+    std::atomic<double> srAtomic { 48000.0 };   // written by prepareToPlay
 
     JUCE_DECLARE_WEAK_REFERENCEABLE (OrchaAudioProcessor)
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (OrchaAudioProcessor)

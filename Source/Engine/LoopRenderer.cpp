@@ -27,8 +27,26 @@ juce::AudioBuffer<float> LoopRenderer::render (const Pattern& pattern, const Con
 
     const int fadeLen = juce::jmax (8, (int) (ctx.sampleRate * 0.003)); // 3 ms
 
-    for (const auto& e : pattern.events)
+    // Pass 1: final start time of every event (swing + humanization applied).
+    // Needed up front so hats can choke: a HIGH hit must silence the previous
+    // HIGH hit, like a closed hat stopping an open one.
+    std::vector<int> starts (pattern.events.size(), -1);
+    for (size_t i = 0; i < pattern.events.size(); ++i)
     {
+        const auto& e = pattern.events[i];
+        const bool oddStep = (juce::roundToInt (std::floor (e.pos)) % 2) == 1
+                             && std::abs (e.pos - std::floor (e.pos)) < 0.01;
+        double timeSec = e.pos * stepSec
+                       + (oddStep ? pattern.swing * stepSec * 0.5 : 0.0)
+                       + e.microMs * 0.001;
+        if (timeSec < 0.0)
+            timeSec = 0.0;
+        starts[i] = (int) (timeSec * ctx.sampleRate);
+    }
+
+    for (size_t eventIndex = 0; eventIndex < pattern.events.size(); ++eventIndex)
+    {
+        const auto& e = pattern.events[eventIndex];
         const int slot = ctx.roleMap.slotFor (e.role);
         if (slot < 0 || slot >= (int) ctx.samples.size())
             continue;
@@ -36,16 +54,7 @@ juce::AudioBuffer<float> LoopRenderer::render (const Pattern& pattern, const Con
         if (sample == nullptr || sample->buffer.getNumSamples() == 0)
             continue;
 
-        // Swing delays odd 16th steps by up to half a step.
-        double pos = e.pos;
-        const bool oddStep = (juce::roundToInt (std::floor (pos)) % 2) == 1
-                             && std::abs (pos - std::floor (pos)) < 0.01;
-        double timeSec = pos * stepSec
-                       + (oddStep ? pattern.swing * stepSec * 0.5 : 0.0)
-                       + e.microMs * 0.001;
-        if (timeSec < 0.0)
-            timeSec = 0.0;
-        const int startSample = (int) (timeSec * ctx.sampleRate);
+        const int startSample = starts[eventIndex];
         if (startSample >= loopLen)
             continue;
 
@@ -79,6 +88,15 @@ juce::AudioBuffer<float> LoopRenderer::render (const Pattern& pattern, const Con
         int renderLen = (int) ((double) srcLen / rate);
         if (gate > 0.0)
             renderLen = juce::jmin (renderLen, (int) (gate * stepSec * ctx.sampleRate));
+
+        // Hat choke: a HIGH hit ends when the next HIGH hit starts, plus a
+        // short crossfade - the open/closed hi-hat behaviour that keeps busy
+        // top lines readable.
+        if (e.role == Role::HIGH)
+            for (size_t j = 0; j < pattern.events.size(); ++j)
+                if (pattern.events[j].role == Role::HIGH && starts[j] > startSample)
+                    renderLen = juce::jmin (renderLen, starts[j] - startSample + fadeLen);
+
         renderLen = juce::jmin (renderLen, loopLen - startSample);   // truncate at loop end
         if (renderLen <= fadeLen / 2)
             continue;
@@ -86,11 +104,19 @@ juce::AudioBuffer<float> LoopRenderer::render (const Pattern& pattern, const Con
         // Perceived-velocity gain curve: quiet ghosts stay audible.
         const float gain = (0.2f + 0.8f * std::pow (e.velocity, 1.5f)) * gainScale;
 
+        // Accent = brightness, not just volume. Accented hits get a decaying
+        // first-difference "snap" over the first 30 ms; ghosts lean the other
+        // way, slightly rounded off, so they sit behind the accents.
+        const float accentAmt = e.velocity > 0.6f ? (e.velocity - 0.6f) * 1.1f : 0.0f;
+        const float ghostAmt = e.velocity < 0.35f ? (0.35f - e.velocity) * 1.2f : 0.0f;
+        const int snapLen = juce::jmax (1, (int) (ctx.sampleRate * 0.03));
+
         for (int ch = 0; ch < 2; ++ch)
         {
             const int srcCh = juce::jmin (ch, sample->buffer.getNumChannels() - 1);
             const float* src = sample->buffer.getReadPointer (srcCh);
             float* dst = out.getWritePointer (ch) + startSample;
+            float prev = 0.0f;
 
             for (int i = 0; i < renderLen; ++i)
             {
@@ -100,7 +126,15 @@ juce::AudioBuffer<float> LoopRenderer::render (const Pattern& pattern, const Con
                 if (srcPos < 0.0 || srcPos >= srcLen - 1)
                     break;
 
-                float v = readInterp (src, srcLen, srcPos) * gain;
+                float v = readInterp (src, srcLen, srcPos);
+                const float diff = v - prev;
+                prev = v;
+                if (accentAmt > 0.0f && i < snapLen)
+                    v += diff * accentAmt * (1.0f - (float) i / (float) snapLen);
+                else if (ghostAmt > 0.0f)
+                    v -= diff * ghostAmt * 0.4f;
+
+                v *= gain;
                 // Anti-click fades on both edges of every edit.
                 if (i < fadeLen)
                     v *= (float) i / (float) fadeLen;

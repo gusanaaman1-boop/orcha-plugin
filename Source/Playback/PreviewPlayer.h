@@ -43,6 +43,7 @@ private:
 
     Loop::Ptr current;              // audio thread only
     double phase = 0.0;             // samples into the loop, audio thread only
+    double startAtPpq = -1.0;       // wait for this bar line; -1 = play now
     std::atomic<int> playingIndex { -1 };
 };
 
