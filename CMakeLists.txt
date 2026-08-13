@@ -91,7 +91,8 @@ set(ORCHA_ENGINE_SOURCES
     Source/Engine/MidiExporter.cpp
     Source/Engine/SampleTransform.cpp
     Source/Engine/PhrasePlanner.cpp
-    Source/Engine/Motif.cpp)
+    Source/Engine/Motif.cpp
+    Source/Engine/MusicalScorer.cpp)
 
 set(ORCHA_PLUGIN_SOURCES
     ${ORCHA_ENGINE_SOURCES}

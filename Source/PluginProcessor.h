@@ -120,10 +120,13 @@ private:
     // signatures the new results must additionally differ from (a variation
     // must differ from its own previous take).
     // forceExisting renders each option's current pattern as-is (FX toggles),
-    // without requiring the edited flag.
+    // without requiring the edited flag. freshBatch marks a NEW generation:
+    // only then does the Phase 5 candidate pool + scored selection run -
+    // restores and re-renders reproduce their stored seeds exactly.
     void enqueueBuild (std::vector<int> indices,
                        juce::StringArray extraSigs = {},
-                       bool forceExisting = false);
+                       bool forceExisting = false,
+                       bool freshBatch = false);
     void rerenderAtCurrentTempo();
 
     // algo: which generator rebuilt this slot's pattern. Restored v0.9.0

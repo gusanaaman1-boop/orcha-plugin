@@ -7,6 +7,7 @@
 #include "Engine/LoopRenderer.h"
 #include "Engine/RenderCache.h"
 #include "Engine/MidiExporter.h"
+#include "Engine/MusicalScorer.h"
 
 namespace orcha
 {
@@ -153,7 +154,7 @@ void OrchaAudioProcessor::generateAll()
         opt.ready = false;
         toBuild.push_back (i);
     }
-    enqueueBuild (std::move (toBuild));
+    enqueueBuild (std::move (toBuild), {}, false, true);
 }
 
 void OrchaAudioProcessor::regenerateOption (int index)
@@ -230,7 +231,8 @@ void OrchaAudioProcessor::setOptionFx (int index, float reverb, float delay)
 
 void OrchaAudioProcessor::enqueueBuild (std::vector<int> indices,
                                         juce::StringArray extraSigs,
-                                        bool forceExisting)
+                                        bool forceExisting,
+                                        bool freshBatch)
 {
     if (indices.empty())
         return;
@@ -295,12 +297,47 @@ void OrchaAudioProcessor::enqueueBuild (std::vector<int> indices,
     pendingJobs.fetch_add (1);
     notifyModel();
 
-    pool.addJob ([self, inputs, existingSigs, ctx, settingsCopy, traits, gen, this]() mutable
+    pool.addJob ([self, inputs, existingSigs, ctx, settingsCopy, traits, gen,
+                  freshBatch, this]() mutable
     {
         // `this` is only touched through atomics here; object lifetime is
         // guarded by removeAllJobs in the destructor.
+
+        // Phase 5: a FRESH batch does not accept the first valid random
+        // pattern. A pool of symbolic candidates (6 per card) is generated,
+        // hard-validated, scored, and the cards are selected jointly for
+        // quality and diversity. Only the selected ones render. Restores and
+        // re-renders never come here - their seeds are already chosen.
+        std::vector<Pattern> chosen;
+        if (freshBatch && inputs.size() >= 4)
+        {
+            const int poolN = (int) inputs.size() * 6;
+            std::vector<Pattern> candidatePool;
+            std::vector<MusicalScorer::Features> feats;
+            std::vector<MusicalScorer::ScoreBreakdown> scores;
+            candidatePool.reserve ((size_t) poolN);
+            const auto m0 = inputs[0].seeds.motif;
+            const auto o0 = inputs[0].seeds.orn;
+            for (int j = 0; j < poolN && generation.load() == gen; ++j)
+            {
+                auto pat = PatternValidator::validate (LoopGenerator::generateV2 (
+                    LoopGenerator::deriveSeed (m0 ^ 0xB00B5ull, j),
+                    LoopGenerator::deriveSeed (o0 ^ 0xCAFEull, j),
+                    settingsCopy, traits));
+                feats.push_back (MusicalScorer::extract (pat));
+                scores.push_back (MusicalScorer::score (pat, settingsCopy));
+                candidatePool.push_back (std::move (pat));
+            }
+            for (int idx : MusicalScorer::selectDiverse (candidatePool, feats,
+                                                         scores,
+                                                         (int) inputs.size()))
+                chosen.push_back (candidatePool[(size_t) idx]);
+        }
+
+        size_t slotInBatch = 0;
         for (const auto& in : inputs)
         {
+            const size_t mySlot = slotInBatch++;
             if (generation.load() != gen)
                 break;
 
@@ -310,6 +347,12 @@ void OrchaAudioProcessor::enqueueBuild (std::vector<int> indices,
                 // A user edit renders exactly as edited - no generation, no
                 // diversity reseed, no validator second-guessing.
                 pattern = in.existing;
+            }
+            else if (mySlot < chosen.size())
+            {
+                // Fresh batch: this card's pattern was already selected from
+                // the scored pool; its seeds are stored for exact restore.
+                pattern = chosen[mySlot];
             }
             else
             {

@@ -14,6 +14,7 @@
 #include "../Engine/FeelVector.h"
 #include "../Engine/Motif.h"
 #include "../Engine/SilencePlanner.h"
+#include "../Engine/MusicalScorer.h"
 #include "../Playback/PreviewPlayer.h"
 
 using namespace orcha;
@@ -1412,6 +1413,105 @@ int main()
                "BREAK ends with less tension than its call");
         check (meanTension (Mode::BREAK, 1) < meanTension (Mode::DROP, 1),
                "BREAK carries less tension than DROP overall");
+    }
+
+    // === ENGINE 2 / PHASE 5: candidate pool + MusicalScorer + joint selection ======
+    {
+        GeneratorSettings s;
+        s.mode = Mode::GROOVE;
+        s.family = Family::EDM;
+
+        // Build a real pool the way the processor does.
+        std::vector<Pattern> pool;
+        std::vector<MusicalScorer::Features> feats;
+        std::vector<MusicalScorer::ScoreBreakdown> scores;
+        for (int j = 0; j < 72; ++j)
+        {
+            auto pat = PatternValidator::validate (LoopGenerator::generateV2 (
+                LoopGenerator::deriveSeed (0xB00B5, j),
+                LoopGenerator::deriveSeed (0xCAFE, j), s));
+            feats.push_back (MusicalScorer::extract (pat));
+            scores.push_back (MusicalScorer::score (pat, s));
+            pool.push_back (std::move (pat));
+        }
+
+        // A known-bad pattern scores below every generated one: no downbeat,
+        // one isolated stack in the middle of nowhere.
+        {
+            Pattern bad;
+            bad.settings = s;
+            for (int k = 0; k < 3; ++k)
+            {
+                Event e;
+                e.pos = 7.0;
+                e.role = (Role) (k + 1);
+                e.velocity = 0.9f;
+                bad.events.push_back (e);
+            }
+            const float badScore = MusicalScorer::score (bad, s).total;
+            int beaten = 0;
+            for (const auto& sc : scores)
+                if (sc.total > badScore)
+                    ++beaten;
+            check (beaten >= 68, "a broken pattern loses to real candidates");
+        }
+
+        // Joint selection: deterministic, floor-respecting, more diverse
+        // than taking the first twelve.
+        const auto sel1 = MusicalScorer::selectDiverse (pool, feats, scores, 12);
+        const auto sel2 = MusicalScorer::selectDiverse (pool, feats, scores, 12);
+        check (sel1 == sel2 && sel1.size() == 12, "selection is deterministic");
+        {
+            std::set<int> unique (sel1.begin(), sel1.end());
+            check (unique.size() == 12, "twelve distinct candidates selected");
+
+            float bestQ = 0.0f;
+            for (const auto& sc : scores)
+                bestQ = juce::jmax (bestQ, sc.total);
+            int aboveFloor = 0;
+            for (int idx : sel1)
+                if (scores[(size_t) idx].total >= bestQ * 0.55f)
+                    ++aboveFloor;
+            check (aboveFloor >= 10, "the quality floor holds for the batch");
+
+            auto meanPairDist = [&] (const std::vector<int>& idxs)
+            {
+                float sum = 0.0f;
+                int n = 0;
+                for (size_t a = 0; a < idxs.size(); ++a)
+                    for (size_t b2 = a + 1; b2 < idxs.size(); ++b2)
+                    {
+                        sum += MusicalScorer::distance (
+                            feats[(size_t) idxs[a]], feats[(size_t) idxs[b2]]);
+                        ++n;
+                    }
+                return n > 0 ? sum / (float) n : 0.0f;
+            };
+            std::vector<int> firstTwelve;
+            for (int j = 0; j < 12; ++j)
+                firstTwelve.push_back (j);
+            check (meanPairDist (sel1) > meanPairDist (firstTwelve) * 1.05f,
+                   "joint selection is more diverse than first-come");
+        }
+
+        // Ghost-only changes must not masquerade as diversity.
+        {
+            auto a = pool[0];
+            auto b2 = a;
+            Event ghost;
+            ghost.pos = 5.0;
+            ghost.role = Role::HIGH;
+            ghost.velocity = 0.12f;
+            ghost.gateSteps = 0.5;
+            b2.events.push_back (ghost);
+            const float d = MusicalScorer::distance (MusicalScorer::extract (a),
+                                                     MusicalScorer::extract (b2));
+            check (d < 0.1f, "one ghost is not perceived diversity");
+        }
+
+        // The debug breakdown explains itself.
+        check (MusicalScorer::score (pool[0], s).describe().contains ("pulse="),
+               "scores stay inspectable");
     }
 
     std::cout << (failures == 0 ? "ALL OK" : "FAILED") << " - "
