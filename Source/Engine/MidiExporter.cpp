@@ -22,20 +22,13 @@ juce::File MidiExporter::fileFor (const Pattern& p, double bpm)
     return RenderCache::fileFor (p, bpm, 0.0).withFileExtension (".mid");
 }
 
-juce::File MidiExporter::write (const Pattern& p, double bpm)
+// Shared between write() and writeChain(): swing and humanization are baked
+// into the note times, exactly as rendered.
+static constexpr int ppq = 960;              // ticks per quarter
+static void appendPattern (juce::MidiMessageSequence& seq, const Pattern& p,
+                           double bpm, double tickOffset)
 {
-    const auto file = fileFor (p, bpm);
-    if (file.existsAsFile())
-        return file;
-
-    constexpr int ppq = 960;                 // ticks per quarter
     const double ticksPerStep = ppq / 4.0;   // one 16th
-
-    juce::MidiMessageSequence seq;
-    seq.addEvent (juce::MidiMessage::tempoMetaEvent (
-        (int) std::round (60'000'000.0 / bpm)), 0.0);
-    seq.addEvent (juce::MidiMessage::timeSignatureMetaEvent (4, 4), 0.0);
-
     const double msToTicks = (bpm / 60.0) * ppq / 1000.0;
     for (const auto& e : p.events)
     {
@@ -46,9 +39,10 @@ juce::File MidiExporter::write (const Pattern& p, double bpm)
                      + e.microMs * msToTicks;
         if (ticks < 0.0)
             ticks = 0.0;
+        ticks += tickOffset;
 
         const double lenSteps = e.gateSteps > 0.0 ? e.gateSteps : 1.0;
-        const int note = noteForRole (e.role);
+        const int note = MidiExporter::noteForRole (e.role);
         const auto velocity = (juce::uint8) juce::jlimit (1, 127,
             juce::roundToInt (e.velocity * 127.0f));
 
@@ -56,8 +50,11 @@ juce::File MidiExporter::write (const Pattern& p, double bpm)
         seq.addEvent (juce::MidiMessage::noteOff (10, note),
                       ticks + lenSteps * ticksPerStep * 0.9);
     }
-    seq.updateMatchedPairs();
+}
 
+static bool writeMidiFile (juce::MidiMessageSequence& seq, const juce::File& file)
+{
+    seq.updateMatchedPairs();
     juce::MidiFile midi;
     midi.setTicksPerQuarterNote (ppq);
     midi.addTrack (seq);
@@ -69,15 +66,47 @@ juce::File MidiExporter::write (const Pattern& p, double bpm)
         if (! out.openedOk() || ! midi.writeTo (out))
         {
             tmp.deleteFile();
-            return {};
+            return false;
         }
     }
     if (! tmp.moveFileTo (file))
     {
         tmp.deleteFile();
-        return file.existsAsFile() ? file : juce::File();
+        return file.existsAsFile();
     }
-    return file;
+    return true;
+}
+
+juce::File MidiExporter::write (const Pattern& p, double bpm)
+{
+    const auto file = fileFor (p, bpm);
+    if (file.existsAsFile())
+        return file;
+
+    juce::MidiMessageSequence seq;
+    seq.addEvent (juce::MidiMessage::tempoMetaEvent (
+        (int) std::round (60'000'000.0 / bpm)), 0.0);
+    seq.addEvent (juce::MidiMessage::timeSignatureMetaEvent (4, 4), 0.0);
+    appendPattern (seq, p, bpm, 0.0);
+    return writeMidiFile (seq, file) ? file : juce::File();
+}
+
+juce::File MidiExporter::writeChain (const std::vector<const Pattern*>& patterns,
+                                     double bpm, const juce::File& file)
+{
+    if (patterns.size() < 2)
+        return {};
+    juce::MidiMessageSequence seq;
+    seq.addEvent (juce::MidiMessage::tempoMetaEvent (
+        (int) std::round (60'000'000.0 / bpm)), 0.0);
+    seq.addEvent (juce::MidiMessage::timeSignatureMetaEvent (4, 4), 0.0);
+    double offset = 0.0;
+    for (const auto* p : patterns)
+    {
+        appendPattern (seq, *p, bpm, offset);
+        offset += p->settings.bars * 16 * (ppq / 4.0);   // next pattern's bar one
+    }
+    return writeMidiFile (seq, file) ? file : juce::File();
 }
 
 } // namespace orcha

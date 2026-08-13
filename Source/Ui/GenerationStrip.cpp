@@ -30,7 +30,7 @@ GenerationStrip::GenerationStrip()
     };
     initKnob (energyKnob, "ENERGY");
     initKnob (densityKnob, "DENSITY");
-    initKnob (randomnessKnob, "RANDOMNESS");
+    initKnob (randomnessKnob, "RANDOM"); // caption; fits the narrow knob column
     energyKnob.setValue (0.6, juce::dontSendNotification);
     densityKnob.setValue (0.5, juce::dontSendNotification);
     randomnessKnob.setValue (0.3, juce::dontSendNotification);
@@ -124,13 +124,15 @@ void GenerationStrip::paint (juce::Graphics& g)
     g.setColour (theme::panel);
     g.fillRoundedRectangle (getLocalBounds().toFloat(), 8.0f);
 
-    // Knob captions.
+    // Knob captions. The knobs sit flush against each other, so the caption
+    // boxes may lean a few pixels into the neighbouring column - but no more,
+    // or the texts themselves start overwriting each other ("DENSIRXNDOMNESS").
     auto knobArea = [] (const juce::Slider& s) { return s.getBounds(); };
     g.setColour (theme::textDim);
-    g.setFont (theme::label (10.0f));
+    g.setFont (theme::label (9.0f));
     for (const auto* knob : { &energyKnob, &densityKnob, &randomnessKnob })
         g.drawText (knob->getName(),
-                    knobArea (*knob).withHeight (12).translated (0, -12).expanded (14, 0),
+                    knobArea (*knob).withHeight (12).translated (0, -12).expanded (8, 0),
                     juce::Justification::centred);
 }
 

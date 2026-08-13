@@ -19,6 +19,12 @@ namespace MidiExporter
 
     // Returns an invalid File on failure. Worker or message thread.
     juce::File write (const Pattern& p, double bpm);
+
+    // The favorites chain as ONE MIDI file: each pattern starts on the bar
+    // right after the previous one, exactly like the chained WAV. Written to
+    // `file` (overwritten); returns an invalid File on failure.
+    juce::File writeChain (const std::vector<const Pattern*>& patterns,
+                           double bpm, const juce::File& file);
 }
 
 } // namespace orcha

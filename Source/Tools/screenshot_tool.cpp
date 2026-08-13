@@ -230,6 +230,126 @@ int main (int argc, char* argv[])
             fuzzTarget.reset();
             std::cout << "FUZZ OK\n";   // reaching here = no crash, no hang
         }
+
+        // --- F3: reliability scenarios the mac can prove -----------------------
+        {
+            int relFailures = 0;
+            const auto scratch = juce::File::getSpecialLocation (
+                juce::File::tempDirectory).getChildFile ("orcha-reliability");
+            scratch.createDirectory();
+
+            // Hebrew / unicode in the sample path - the user's real world.
+            const juce::File source { juce::String (argv[2]) };
+            const auto hebrew = scratch.getChildFile (
+                juce::String::fromUTF8 ("\xd7\xaa\xd7\x95\xd7\xa3 \xd7\x91\xd7\xa2\xd7\x91\xd7\xa8\xd7\x99\xd7\xaa.wav"));
+            hebrew.deleteFile();
+            if (source.copyFileTo (hebrew))
+            {
+                auto uni = std::make_unique<OrchaAudioProcessor>();
+                uni->prepareToPlay (48000.0, 512);
+                uni->loadSampleAsync (0, hebrew);
+                pumpUntil ([&] { return uni->getSample (0) != nullptr; }, 15000);
+                if (uni->getSample (0) == nullptr)
+                {
+                    std::cout << "RELIABILITY FAIL: unicode path did not load\n";
+                    ++relFailures;
+                }
+                else
+                {
+                    // Save while the sample file exists, then restore AFTER it
+                    // vanished: no crash, and the slot reports missing rather
+                    // than pretending.
+                    uni->generateAll();
+                    pumpUntil ([&] { return ! uni->isGenerating(); }, 30000);
+                    juce::MemoryBlock uniState;
+                    uni->getStateInformation (uniState);
+                    uni.reset();
+                    hebrew.deleteFile();
+                    auto missing = std::make_unique<OrchaAudioProcessor>();
+                    missing->prepareToPlay (48000.0, 512);
+                    missing->setStateInformation (uniState.getData(),
+                                                  (int) uniState.getSize());
+                    pumpUntil ([&] { return ! missing->isGenerating(); }, 15000);
+                    if (missing->getSample (0) != nullptr)
+                    {
+                        std::cout << "RELIABILITY FAIL: missing sample restored as loaded\n";
+                        ++relFailures;
+                    }
+                    missing.reset();
+                }
+            }
+            else
+            {
+                std::cout << "RELIABILITY FAIL: could not stage unicode copy\n";
+                ++relFailures;
+            }
+
+            // Two live instances generating at once - one shared render cache.
+            {
+                auto a = std::make_unique<OrchaAudioProcessor>();
+                auto b = std::make_unique<OrchaAudioProcessor>();
+                for (auto* p : { a.get(), b.get() })
+                {
+                    p->prepareToPlay (48000.0, 512);
+                    for (int i = 0; i < juce::jmin (3, argc - 2); ++i)
+                        p->loadSampleAsync (i, juce::File { juce::String (argv[2 + i]) });
+                }
+                pumpUntil ([&]
+                {
+                    return a->getSample (0) != nullptr && b->getSample (0) != nullptr;
+                }, 15000);
+                a->generateAll();
+                b->generateAll();
+                pumpUntil ([&]
+                {
+                    return ! a->isGenerating() && ! b->isGenerating();
+                }, 60000);
+                int readyA = 0, readyB = 0;
+                for (int i = 0; i < OrchaAudioProcessor::numOptions; ++i)
+                {
+                    readyA += a->option (i).ready ? 1 : 0;
+                    readyB += b->option (i).ready ? 1 : 0;
+                }
+                if (readyA < OrchaAudioProcessor::numOptions
+                    || readyB < OrchaAudioProcessor::numOptions)
+                {
+                    std::cout << "RELIABILITY FAIL: dual instances ready "
+                              << readyA << "/" << readyB << "\n";
+                    ++relFailures;
+                }
+
+                // Sample-rate change mid-flight: the drift timer must rerender
+                // every card at the new rate without being asked.
+                a->prepareToPlay (44100.0, 512);
+                a->processBlock (block, midi);
+                pumpUntil ([&]
+                {
+                    if (a->isGenerating())
+                        return false;
+                    for (int i = 0; i < OrchaAudioProcessor::numOptions; ++i)
+                        if (! a->option (i).ready)
+                            return false;
+                    return true;
+                }, 30000);
+                int ready44 = 0;
+                for (int i = 0; i < OrchaAudioProcessor::numOptions; ++i)
+                    ready44 += a->option (i).ready ? 1 : 0;
+                if (ready44 < OrchaAudioProcessor::numOptions)
+                {
+                    std::cout << "RELIABILITY FAIL: 44.1k rerender ready "
+                              << ready44 << "/12\n";
+                    ++relFailures;
+                }
+                a.reset();
+                b.reset();
+            }
+
+            scratch.deleteRecursively();
+            failures += relFailures;
+            std::cout << (relFailures == 0 ? "RELIABILITY OK"
+                                           : "RELIABILITY FAILED") << "\n";
+        }
+
         editor.reset();
         processor.reset();
         restored.reset();

@@ -258,6 +258,25 @@ bool OrchaAudioProcessor::exportAll (const juce::File& directory)
         cards.add (juce::var (card));
         ++exported;
     }
+    // The favorites chain, when there is one, ships as audio AND as MIDI so
+    // the whole phrase can be rebuilt in the host with the user's own sounds.
+    std::vector<const Pattern*> chainPatterns;
+    for (const auto& opt : options)
+        if (opt.favorite && opt.present && opt.ready && opt.loop != nullptr)
+            chainPatterns.push_back (&opt.pattern);
+    if (chainPatterns.size() >= 2)
+    {
+        const auto chainBase = "ORCHA_CHAIN_"
+            + juce::String ((int) chainPatterns.size()) + "cards_"
+            + juce::String (juce::roundToInt (bpmAtomic.load())) + "bpm";
+        const auto chainWav = ensureChainWav();
+        if (chainWav.existsAsFile())
+            chainWav.copyFileTo (directory.getChildFile (chainBase + ".wav"));
+        MidiExporter::writeChain (chainPatterns, bpmAtomic.load(),
+                                  directory.getChildFile (chainBase + ".mid"));
+        arr->setProperty ("chainCards", (int) chainPatterns.size());
+    }
+
     arr->setProperty ("plugin", "ORCHA");
     arr->setProperty ("cards", cards);
     directory.getChildFile ("manifest.json")

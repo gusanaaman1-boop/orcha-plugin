@@ -1,4 +1,4 @@
-# ORCHA — דו"ח מיפוי סופי מול פרומפט ההשלמה (מצב v0.13.0)
+# ORCHA — דו"ח מיפוי סופי מול פרומפט ההשלמה (מצב v0.13.1)
 
 מיפוי כל סעיף במסמך "Final Engine & Product Completion Prompt" למימוש,
 לבדיקות ולראיות — כולל, במפורש, מה נדחה ולמה. ‏v1.0 עצמו מוכרז רק אחרי
@@ -10,8 +10,8 @@
 |---|---|
 | בדיקות | **4,543 ירוקות**; ‏hash מנוע 1 ללא שינוי מאז ההקפאה |
 | ביצועים | ‏96 מועמדים: ‏0.68ms; רינדור 12 כרטיסים: ‏9ms; ‏audio thread נקי |
-| אימותים | ‏auval PASS · ‏REGEN OK · ‏STATE OK · ‏**FUZZ OK** |
-| גרסה | v0.13.0, שתי התקנות (מק pkg + ווינדוס build-and-install) |
+| אימותים | ‏auval PASS · ‏REGEN OK · ‏STATE OK · ‏FUZZ OK · ‏**RELIABILITY OK** |
+| גרסה | v0.13.1, שתי התקנות (מק pkg + ווינדוס build-and-install) |
 
 ## Phase A — Calibration (קוד: הושלם; האזנה: ממתינה)
 
@@ -21,7 +21,7 @@
 | A2 פייפליין מפורש | ✅ | `hardReject` (לעולם לא מתרכך) + `absoluteQualityFloor` פר־משפחה×מצב (טבלה v1 מתועדת) + `CriticalFloors` + רצפה יחסית |
 | A3 כלי האזנה עיוור | ✅ | `OrchaAudition blind` — ‏40 זוגות + 6 חזרות סמויות, ‏X/Y מוגרל, מפתח נסתר, יישור עוצמה, תבנית ratings |
 | A4 מטריצת 120 מקרים | ✅ | ‏`test-matrix.csv` נוצר עם הערכה |
-| A5 פרוטוקול | ✅ (מסמך) | `docs/LISTENING-PROTOCOL-HE.md` — שלושה סבבים, תגיות, פאנל, מדדים |
+| A5 פרוטוקול | ✅ | `docs/LISTENING-PROTOCOL-HE.md` + ‏`OrchaAudition tally` — חישוב אוטומטי של כל המדדים (win-rate כולל/משפחה/מצב, משוקלל־ביטחון, עקביות חזרות, תגיות) ← ‏`metrics.json` |
 | A6 כיול משקלים | ⏳ **ממתין ל־ratings אנושיים** | שיטת משפחה־אחת־בכל־איטרציה מתועדת |
 | A7 CLEAN | ✅ | שלוש עוצמות, דטרמיניסטי, עוגנים/שקט מוגנים, RESET מבטל; בדיקות מונוטוניות |
 | A8 ENDING | ✅ | ‏AUTO/LOOP/DROP/BREAK/STOP ב־EDIT; ‏`applyEnding` משכתב רק את אזור המעבר; נשמר ב־state |
@@ -34,7 +34,7 @@
 | B1/B2 GENERATE SET | ✅ כפתור SET; ‏12 כרטיסים ב־4 קבוצות על **seed מוטיב אחד** (אותו שלד/קול/תא = עולם אחד); ‏modeov נשמר |
 | B3 MAKE TRANSITION | ✅ בחירת יעד ב־EDIT; אותו מוטיב, חצי אורך, סיום מהסקשן של היעד, דחיפה מדלתת המתח, זרם קישוטים משני ה־seeds |
 | B4 Chaining | ✅ חלקי — ‏DRAG CHAIN: מועדפים בסדר החריצים ל־WAV אחד. **מגבלה מתועדת:** זנבות FX לא חוצים גבולות; אין reorder ידני |
-| B5 Export Set/All | ✅ ‏EXPORT ALL: ‏WAV+MIDI+manifest.json, שמות יציבים |
+| B5 Export Set/All | ✅ ‏EXPORT ALL: ‏WAV+MIDI+manifest.json פר כרטיס, ובנוסף השרשור עצמו כ־`ORCHA_CHAIN_*.wav` **וגם** `ORCHA_CHAIN_*.mid` (כל כרטיס נכנס בתיבה שאחרי קודמו) |
 | **שער B** | ‏blind "אותו עולם" — ממתין להאזנה | |
 
 ## Phase C — Performance Profiles 2.0
@@ -60,7 +60,7 @@ MIDI Dataset דורש החלטת הורדה/רישוי של בעל המוצר. �
 |---|---|
 | F1 Pump | ✅ סליידר סגול ב־EDIT; דאקינג דטרמיניסטי מה־LOW־ים של הלופ, עוטף תפר, תקרה נשמרת. ערך אמיתי — ל־blind אחרי הכיול |
 | F2 עריכת micro | ✅ קליק מוחק טיקים; ‏CLEAN לשכבות; היררכיה ויזואלית קיימת. גרירת טיימינג של טיקים — נדחה |
-| F3 Reliability matrix | ◐ מק מלא (auval, ‏VST3, ‏Standalone, ‏Universal, ‏44.1–96k דרך auval); **ווינדוס/קיובייס — דורש את מכונת בעל המוצר** |
+| F3 Reliability matrix | ◐ מק מלא: ‏auval, ‏VST3, ‏Standalone, ‏Universal, ‏44.1–96k, ובנוסף (RELIABILITY OK אוטומטי): נתיב דגימה בעברית, שחזור state כשקובץ הדגימה נמחק (החריץ מדווח חסר, בלי קריסה), שני מופעים חיים מייצרים במקביל, החלפת sample-rate תוך כדי — רינדור מחדש אוטומטי; **ווינדוס/קיובייס — דורש את מכונת בעל המוצר** |
 | F4 Perf budgets | ✅ שני benchmarks עם תקרות בחבילת הבדיקות; היסטוריה בגיט |
 | F5 State/fuzz | ✅ ‏schema versioned; ‏round-trip; ‏קטום/מושחת/זבל/null — ‏FUZZ OK בלי קריסה |
 | F6 Docs/packaging | ◐ ‏`USER-GUIDE-HE.md` (כולל המאקרואים בשפה מוזיקלית ו־ENDING), רישיונות מוזכרים; **חתימה/נוטריזציה** דורשת חשבון Apple Developer בתשלום — מחוץ לכלל ה"אין תשלומים" עד החלטת בעל המוצר |

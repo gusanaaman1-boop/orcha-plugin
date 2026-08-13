@@ -3,6 +3,7 @@
 //   OrchaAudition <outDir> <bpm> sample1.wav [sample2.wav [sample3.wav]]
 
 #include <JuceHeader.h>
+#include <map>
 #include "../Engine/SampleLoader.h"
 #include "../Engine/SampleAnalyzer.h"
 #include "../Engine/LoopGenerator.h"
@@ -130,12 +131,181 @@ static int makeBlindKit (const juce::File& outDir, double bpm,
     return 0;
 }
 
+// Phase A5/A6: turns the listener's filled ratings into the protocol's
+// metrics. Reads <kitDir>/.key/key.csv + a ratings JSONL (one object per
+// line: {"case":N,"choice":"X"|"Y"|"tie","confidence":1-5,"tags":[],"note":""}),
+// prints win rates overall / per family / per mode, repeat-consistency, and
+// tag counts, and writes metrics.json next to the ratings. Empty choices are
+// skipped and reported - never counted as data.
+static int tallyRatings (const juce::File& kitDir, const juce::File& ratingsFile)
+{
+    const auto keyFile = kitDir.getChildFile (".key").getChildFile ("key.csv");
+    if (! keyFile.existsAsFile())
+    {
+        std::cout << "no key at " << keyFile.getFullPathName() << "\n";
+        return 1;
+    }
+    if (! ratingsFile.existsAsFile())
+    {
+        std::cout << "no ratings file at " << ratingsFile.getFullPathName() << "\n";
+        return 1;
+    }
+
+    struct KeyRow { juce::String x, y, family, mode; int repeatOf = 0; };
+    std::map<int, KeyRow> key;
+    {
+        juce::StringArray lines;
+        keyFile.readLines (lines);
+        for (int i = 1; i < lines.size(); ++i)   // skip header
+        {
+            auto cols = juce::StringArray::fromTokens (lines[i], ",", "");
+            if (cols.size() < 11)
+                continue;
+            key[cols[0].getIntValue()] =
+                { cols[1], cols[2], cols[3], cols[4], cols[10].getIntValue() };
+        }
+    }
+
+    struct Rating { juce::String engine; int confidence = 0; juce::StringArray tags; };
+    std::map<int, Rating> picks;          // case -> resolved pick
+    int filled = 0, empty = 0, ties = 0, unknown = 0;
+    std::map<juce::String, int> tagCounts;
+    {
+        juce::StringArray lines;
+        ratingsFile.readLines (lines);
+        for (const auto& line : lines)
+        {
+            if (line.trim().isEmpty())
+                continue;
+            const auto v = juce::JSON::parse (line);
+            if (! v.isObject())
+                { ++unknown; continue; }
+            const int caseNum = (int) v.getProperty ("case", 0);
+            const auto choice = v.getProperty ("choice", "").toString()
+                                 .trim().toUpperCase();
+            const auto it = key.find (caseNum);
+            if (it == key.end())
+                { ++unknown; continue; }
+            if (choice.isEmpty())
+                { ++empty; continue; }
+            Rating r;
+            r.confidence = (int) v.getProperty ("confidence", 0);
+            if (const auto* tagArr = v.getProperty ("tags", juce::var()).getArray())
+                for (const auto& t : *tagArr)
+                {
+                    r.tags.add (t.toString());
+                    ++tagCounts[t.toString()];
+                }
+            if (choice == "X")       r.engine = it->second.x;
+            else if (choice == "Y")  r.engine = it->second.y;
+            else                     { ++ties; continue; }
+            picks[caseNum] = std::move (r);
+            ++filled;
+        }
+    }
+
+    struct Bucket { int wins2 = 0, total = 0; };
+    Bucket overall;
+    std::map<juce::String, Bucket> byFamily, byMode;
+    double confWeightedWins = 0.0, confWeightTotal = 0.0;
+    int repeatPairs = 0, repeatConsistent = 0;
+    for (const auto& [caseNum, r] : picks)
+    {
+        const auto& k = key[caseNum];
+        if (k.repeatOf > 0)
+        {
+            // Hidden repeat: consistency check only, never counted twice.
+            const auto orig = picks.find (k.repeatOf);
+            if (orig != picks.end())
+            {
+                ++repeatPairs;
+                if (orig->second.engine == r.engine)
+                    ++repeatConsistent;
+            }
+            continue;
+        }
+        const bool wins2 = r.engine == "engine2";
+        ++overall.total;            overall.wins2 += wins2 ? 1 : 0;
+        ++byFamily[k.family].total; byFamily[k.family].wins2 += wins2 ? 1 : 0;
+        ++byMode[k.mode].total;     byMode[k.mode].wins2 += wins2 ? 1 : 0;
+        const double w = juce::jlimit (1, 5, r.confidence);
+        confWeightTotal += w;
+        confWeightedWins += wins2 ? w : 0.0;
+    }
+
+    auto pct = [] (int a, int b)
+    { return b > 0 ? juce::String (100.0 * a / b, 1) + "%" : juce::String ("-"); };
+
+    std::cout << "ORCHA blind tally\n"
+              << "  rated: " << filled << "  empty: " << empty
+              << "  ties: " << ties << "  unmatched: " << unknown << "\n"
+              << "  engine2 wins: " << overall.wins2 << "/" << overall.total
+              << "  (" << pct (overall.wins2, overall.total) << ")\n";
+    if (confWeightTotal > 0.0)
+        std::cout << "  confidence-weighted: "
+                  << juce::String (100.0 * confWeightedWins / confWeightTotal, 1)
+                  << "%\n";
+    if (repeatPairs > 0)
+        std::cout << "  repeat consistency: " << repeatConsistent << "/"
+                  << repeatPairs << "  (" << pct (repeatConsistent, repeatPairs)
+                  << ")  - below 70% means the answers are noise\n";
+    std::cout << "  by family:\n";
+    for (const auto& [name, b] : byFamily)
+        std::cout << "    " << name.paddedRight (' ', 15) << b.wins2 << "/"
+                  << b.total << "  (" << pct (b.wins2, b.total) << ")\n";
+    std::cout << "  by mode:\n";
+    for (const auto& [name, b] : byMode)
+        std::cout << "    " << name.paddedRight (' ', 15) << b.wins2 << "/"
+                  << b.total << "  (" << pct (b.wins2, b.total) << ")\n";
+    if (! tagCounts.empty())
+    {
+        std::cout << "  tags:\n";
+        for (const auto& [tag, n] : tagCounts)
+            std::cout << "    " << tag.paddedRight (' ', 15) << n << "\n";
+    }
+
+    auto* m = new juce::DynamicObject();
+    m->setProperty ("rated", filled);
+    m->setProperty ("empty", empty);
+    m->setProperty ("ties", ties);
+    m->setProperty ("engine2Wins", overall.wins2);
+    m->setProperty ("scoredCases", overall.total);
+    m->setProperty ("repeatConsistent", repeatConsistent);
+    m->setProperty ("repeatPairs", repeatPairs);
+    if (confWeightTotal > 0.0)
+        m->setProperty ("confidenceWeightedWinRate",
+                        confWeightedWins / confWeightTotal);
+    juce::Array<juce::var> fams;
+    for (const auto& [name, b] : byFamily)
+    {
+        auto* f = new juce::DynamicObject();
+        f->setProperty ("family", name);
+        f->setProperty ("wins2", b.wins2);
+        f->setProperty ("total", b.total);
+        fams.add (juce::var (f));
+    }
+    m->setProperty ("byFamily", fams);
+    ratingsFile.getSiblingFile ("metrics.json")
+        .replaceWithText (juce::JSON::toString (juce::var (m), false));
+    std::cout << "metrics.json written next to the ratings\n";
+    return 0;
+}
+
 int main (int argc, char* argv[])
 {
+    if (argc >= 3 && juce::String (argv[1]) == "tally")
+    {
+        const juce::File kitDir { juce::String (argv[2]) };
+        const juce::File ratings = argc >= 4
+            ? juce::File { juce::String (argv[3]) }
+            : kitDir.getChildFile ("ratings.jsonl");
+        return tallyRatings (kitDir, ratings);
+    }
     if (argc < 4)
     {
         std::cout << "usage: OrchaAudition <outDir> <bpm> <sample1> [sample2 [sample3]]\n"
-                     "       OrchaAudition blind <outDir> <bpm> <samples...>\n";
+                     "       OrchaAudition blind <outDir> <bpm> <samples...>\n"
+                     "       OrchaAudition tally <kitDir> [ratings.jsonl]\n";
         return 1;
     }
     const bool blind = juce::String (argv[1]) == "blind";
