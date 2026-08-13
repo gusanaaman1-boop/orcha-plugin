@@ -17,10 +17,11 @@ SampleCard::SampleCard (int slotIndex) : slot (slotIndex)
         b->setColour (juce::TextButton::buttonOnColourId, theme::turquoise);
         b->onClick = [this]
         {
+            auto t = transform;
+            t.reverse = reverseButton.getToggleState();
+            t.trimTail = trimButton.getToggleState();
             if (onTransformChange)
-                onTransformChange ({ reverseButton.getToggleState(),
-                                     trimButton.getToggleState(),
-                                     transform.length });
+                onTransformChange (t);
         };
         addChildComponent (*b);
     }
@@ -43,7 +44,8 @@ void SampleCard::update (InputSample::Ptr s, bool nowLoading,
     // Timer-driven updates only repaint on an actual change.
     if (sample == s && loading == nowLoading && ! dragOver
         && transform.reverse == t.reverse && transform.trimTail == t.trimTail
-        && transform.length == t.length)
+        && transform.start == t.start && transform.end == t.end
+        && transform.fadeIn == t.fadeIn && transform.fadeOut == t.fadeOut)
         return;
     sample = std::move (s);
     loading = nowLoading;
@@ -133,78 +135,39 @@ void SampleCard::paint (juce::Graphics& g)
     const auto wave = waveArea();
     theme::paintWaveform (g, wave, sample->buffer, theme::turquoise);
 
-    // Length gesture: while dragging, the amber cut line and the dimmed
-    // discard region preview where the sample will end.
-    if (draggingLength && pendingFraction < 0.999f)
-    {
-        const float cutX = wave.getX() + wave.getWidth() * pendingFraction;
-        g.setColour (theme::background.withAlpha (0.7f));
-        g.fillRect (juce::Rectangle<float> (cutX, wave.getY(),
-                                            wave.getRight() - cutX, wave.getHeight()));
-        g.setColour (theme::amber);
-        g.fillRect (cutX - 1.0f, wave.getY(), 2.0f, wave.getHeight());
-    }
-
     g.setColour (theme::textDim);
     g.setFont (theme::label (11.5f));
     g.drawText (sample->name, info.removeFromTop (16), juce::Justification::centredLeft);
-    // The resolved role, and the kept length when the sample is shortened.
+    // The resolved role, and the kept region when the sample is cut.
     juce::String detail;
     if (sample->userRole == Role::AUTO)
         detail << "AUTO -> " << roleName (sample->resolvedRole);
-    if (transform.length < 0.999f)
-        detail << "   LEN " << juce::roundToInt (transform.length * 100.0f) << "%";
+    if (transform.isCropped())
+        detail << "   CUT "
+               << juce::roundToInt ((transform.end - transform.start) * 100.0f) << "%";
     g.drawText (detail, info.withTrimmedRight (80), juce::Justification::centredLeft);
-}
-
-void SampleCard::mouseDown (const juce::MouseEvent& e)
-{
-    // A horizontal drag over the waveform shortens the sample to the cut
-    // point; double-click restores full length.
-    draggingLength = sample != nullptr && waveArea().contains (e.position);
-    pendingFraction = 1.0f;
-}
-
-void SampleCard::mouseDrag (const juce::MouseEvent& e)
-{
-    if (! draggingLength)
-        return;
-    const auto wave = waveArea();
-    pendingFraction = juce::jlimit (0.05f, 1.0f,
-        (e.position.x - wave.getX()) / juce::jmax (1.0f, wave.getWidth()));
-    repaint();
 }
 
 void SampleCard::mouseUp (const juce::MouseEvent& e)
 {
-    if (draggingLength && ! e.mouseWasClicked() && pendingFraction < 0.999f)
+    if (! e.mouseWasClicked() || e.mods.isPopupMenu())
+        return;
+    // A loaded card's waveform opens the cutting room; an empty card loads.
+    if (sample != nullptr && waveArea().contains (e.position))
     {
-        // The displayed wave is already the shortened one, so the gesture
-        // scales the current kept length.
-        auto t = transform;
-        t.length = juce::jlimit (0.02f, 1.0f, t.length * pendingFraction);
-        draggingLength = false;
-        if (onTransformChange)
-            onTransformChange (t);
+        if (onOpenEditor)
+            onOpenEditor();
         return;
     }
-    draggingLength = false;
-    repaint();
-
-    if (sample == nullptr && ! loading
-        && e.mouseWasClicked() && ! e.mods.isPopupMenu())
+    if (sample == nullptr && ! loading)
         openChooser();
 }
 
-void SampleCard::mouseDoubleClick (const juce::MouseEvent& e)
+void SampleCard::mouseMove (const juce::MouseEvent& e)
 {
-    if (sample != nullptr && waveArea().contains (e.position)
-        && transform.length < 0.999f && onTransformChange)
-    {
-        auto t = transform;
-        t.length = 1.0f;
-        onTransformChange (t);
-    }
+    setMouseCursor (sample != nullptr && waveArea().contains (e.position)
+                        ? juce::MouseCursor::PointingHandCursor
+                        : juce::MouseCursor::NormalCursor);
 }
 
 void SampleCard::openChooser()

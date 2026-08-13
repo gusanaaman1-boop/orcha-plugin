@@ -55,21 +55,31 @@ InputSample::Ptr SampleTransform::apply (const InputSample& raw, Settings settin
         }
     }
 
-    // Shorten: keep the head of the (already trimmed) sample. The 3 ms
-    // fade-out keeps the cut clean at any position.
-    const float keep = juce::jlimit (0.02f, 1.0f, settings.length);
-    if (keep < 0.999f)
+    // Crop to the kept region - both edges are the user's to drag.
+    const float s0 = juce::jlimit (0.0f, 0.95f, settings.start);
+    const float s1 = juce::jlimit (s0 + 0.02f, 1.0f, settings.end);
+    if (settings.isCropped())
     {
-        const int newLen = juce::jmax (16, (int) ((float) numSamples * keep));
-        juce::AudioBuffer<float> shorter (chans, newLen);
+        const int from = (int) ((float) numSamples * s0);
+        const int newLen = juce::jmax (16, (int) ((float) numSamples * (s1 - s0)));
+        juce::AudioBuffer<float> cropped (chans, juce::jmin (newLen, numSamples - from));
         for (int ch = 0; ch < chans; ++ch)
-            shorter.copyFrom (ch, 0, buf, ch, 0, newLen);
-        const int fade = juce::jmin (newLen / 3, (int) (raw.sourceSampleRate * 0.003));
-        if (fade > 0)
-            shorter.applyGainRamp (newLen - fade, fade, 1.0f, 0.0f);
-        buf = std::move (shorter);
-        numSamples = newLen;
+            cropped.copyFrom (ch, 0, buf, ch, from, cropped.getNumSamples());
+        buf = std::move (cropped);
+        numSamples = buf.getNumSamples();
     }
+
+    // Light user fades from each edge, on top of the always-on 3 ms
+    // anti-click ramps.
+    const int fadeInLen = juce::jmax ((int) (raw.sourceSampleRate * 0.003),
+        (int) ((float) numSamples * juce::jlimit (0.0f, 0.5f, settings.fadeIn)));
+    const int fadeOutLen = juce::jmax ((int) (raw.sourceSampleRate * 0.003),
+        (int) ((float) numSamples * juce::jlimit (0.0f, 0.5f, settings.fadeOut)));
+    if (settings.isCropped() || settings.fadeIn > 0.001f)
+        buf.applyGainRamp (0, juce::jmin (fadeInLen, numSamples), 0.0f, 1.0f);
+    if (settings.isCropped() || settings.fadeOut > 0.001f)
+        buf.applyGainRamp (juce::jmax (0, numSamples - fadeOutLen),
+                           juce::jmin (fadeOutLen, numSamples), 1.0f, 0.0f);
 
     if (settings.reverse)
         buf.reverse (0, numSamples);

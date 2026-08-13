@@ -5,6 +5,7 @@
 #include "Ui/GenerationStrip.h"
 #include "Ui/OptionCard.h"
 #include "Ui/PatternEditPanel.h"
+#include "Ui/SampleEditPanel.h"
 
 namespace orcha
 {
@@ -29,6 +30,7 @@ public:
 
     // For the deterministic screenshot tool.
     void openEditPanelFor (int index) { editPanel.openFor (index); }
+    void openSamplePanelFor (int slot) { samplePanel.openFor (slot); }
 
 private:
     void refresh();
@@ -42,6 +44,7 @@ private:
     std::array<std::unique_ptr<OptionCard>, OrchaAudioProcessor::numOptions> optionCards;
     juce::TextButton generateMoreButton { "GENERATE MORE" };
     PatternEditPanel editPanel;
+    SampleEditPanel samplePanel;
 
     std::array<juce::uint32, OrchaAudioProcessor::numSlots> loadStartedAt {};
 

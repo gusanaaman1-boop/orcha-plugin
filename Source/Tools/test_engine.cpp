@@ -561,10 +561,23 @@ int main()
         check (trimmed->buffer.getMagnitude (0, trimmed->buffer.getNumSamples()) > 0.4f,
                "trim keeps the audio itself");
 
-        const auto half = orcha::SampleTransform::apply (*padded, { false, false, 0.5f });
+        // Cut from BOTH sides: keep the middle half.
+        const auto half = orcha::SampleTransform::apply (*padded,
+            { false, false, 0.25f, 0.75f });
         check (std::abs (half->buffer.getNumSamples()
                          - padded->buffer.getNumSamples() / 2) <= 1,
-               "length control halves the sample");
+               "two-sided cut keeps exactly the chosen region");
+
+        // A light fade-in tames the head without touching the length.
+        orcha::SampleTransform::Settings fadeSet;
+        fadeSet.fadeIn = 0.3f;
+        const auto faded = orcha::SampleTransform::apply (*padded, fadeSet);
+        check (faded->buffer.getNumSamples() == padded->buffer.getNumSamples(),
+               "fade does not change the length");
+        const int probe = (int) ((float) padded->buffer.getNumSamples() * 0.05f);
+        check (std::abs (faded->buffer.getSample (0, probe))
+                   <= std::abs (padded->buffer.getSample (0, probe)) + 1.0e-6f,
+               "fade-in reduces the head");
 
         const auto reversed = orcha::SampleTransform::apply (*padded, { true, false });
         bool mirrored = reversed->buffer.getNumSamples() == padded->buffer.getNumSamples();

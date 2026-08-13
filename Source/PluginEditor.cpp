@@ -7,7 +7,7 @@ namespace orcha
 {
 
 OrchaAudioProcessorEditor::OrchaAudioProcessorEditor (OrchaAudioProcessor& p)
-    : juce::AudioProcessorEditor (p), processor (p), editPanel (p)
+    : juce::AudioProcessorEditor (p), processor (p), editPanel (p), samplePanel (p)
 {
     setLookAndFeel (&lookAndFeel);
 
@@ -25,6 +25,11 @@ OrchaAudioProcessorEditor::OrchaAudioProcessorEditor (OrchaAudioProcessor& p)
         card->onTransformChange = [this, i] (SampleTransform::Settings t)
         {
             processor.setTransform (i, t);
+        };
+        card->onOpenEditor = [this, i]
+        {
+            editPanel.close();          // one room at a time
+            samplePanel.openFor (i);
         };
         addAndMakeVisible (*card);
         sampleCards[(size_t) i] = std::move (card);
@@ -50,11 +55,16 @@ OrchaAudioProcessorEditor::OrchaAudioProcessorEditor (OrchaAudioProcessor& p)
         card->onRegenerate = [this, i] { processor.regenerateOption (i); };
         card->getDragFile = [this, i] { return processor.ensureWavFor (i); };
         card->getMidiDragFile = [this, i] { return processor.ensureMidiFor (i); };
-        card->onEdit = [this, i] { editPanel.openFor (i); };
+        card->onEdit = [this, i]
+        {
+            samplePanel.close();        // one room at a time
+            editPanel.openFor (i);
+        };
         addAndMakeVisible (*card);
         optionCards[(size_t) i] = std::move (card);
     }
     addChildComponent (editPanel);
+    addChildComponent (samplePanel);
 
     generateMoreButton.onClick = [this]
     {
@@ -113,6 +123,7 @@ void OrchaAudioProcessorEditor::refresh()
                               processor.isGenerating());
     generateMoreButton.setEnabled (canGenerate && ! processor.isGenerating());
     editPanel.refreshFromModel();
+    samplePanel.refreshFromModel();
 }
 
 void OrchaAudioProcessorEditor::timerCallback()
@@ -216,6 +227,7 @@ void OrchaAudioProcessorEditor::resized()
 
     auto grid = area.reduced (12, 2);
     editPanel.setBounds (grid);         // the step editor covers the grid
+    samplePanel.setBounds (grid);       // so does the sample cutting room
     const int cols = 4, rows = 3;
     const int w = grid.getWidth() / cols, h = grid.getHeight() / rows;
     for (int i = 0; i < OrchaAudioProcessor::numOptions; ++i)

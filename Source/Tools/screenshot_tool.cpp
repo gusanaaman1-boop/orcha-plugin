@@ -87,6 +87,21 @@ int main (int argc, char* argv[])
             orchaEditor->openEditPanelFor (2);
             pumpUntil ([] { return false; }, 200);
             shoot ("04-edit-panel.png");
+
+            // The sample cutting room, with a real crop + fades visible.
+            auto cutSet = processor->getTransform (0);
+            cutSet.start = 0.15f;
+            cutSet.end = 0.8f;
+            cutSet.fadeIn = 0.1f;
+            cutSet.fadeOut = 0.2f;
+            processor->setTransform (0, cutSet);
+            orchaEditor->openSamplePanelFor (0);
+            pumpUntil ([] { return false; }, 300);
+            shoot ("05-sample-cut.png");
+            cutSet = {};
+            processor->setTransform (0, cutSet);
+            orchaEditor->openSamplePanelFor (0);   // leave it consistent
+            pumpUntil ([] { return false; }, 200);
         }
 
         int failuresEarly = 0;

@@ -37,6 +37,8 @@ public:
     };
 
     InputSample::Ptr getSample (int slot) const   { return samples[(size_t) slot]; }
+    // The pristine decode, for the sample-cut editor's full waveform.
+    InputSample::Ptr getRawSample (int slot) const { return rawSamples[(size_t) slot]; }
     // Which loaded slot serves this role right now (-1 when nothing loaded).
     int slotForRole (Role r) const                { return roleMap.slotFor (r); }
     void loadSampleAsync (int slot, const juce::File& file);

@@ -497,7 +497,10 @@ void OrchaAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
             v.setProperty ("role", roleName (s->userRole), nullptr);
             v.setProperty ("rev", transforms[(size_t) i].reverse, nullptr);
             v.setProperty ("trim", transforms[(size_t) i].trimTail, nullptr);
-            v.setProperty ("len", (double) transforms[(size_t) i].length, nullptr);
+            v.setProperty ("cs", (double) transforms[(size_t) i].start, nullptr);
+            v.setProperty ("ce", (double) transforms[(size_t) i].end, nullptr);
+            v.setProperty ("fi", (double) transforms[(size_t) i].fadeIn, nullptr);
+            v.setProperty ("fo", (double) transforms[(size_t) i].fadeOut, nullptr);
             ss.appendChild (v, nullptr);
         }
     root.appendChild (ss, nullptr);
@@ -645,10 +648,15 @@ void OrchaAudioProcessor::setStateInformation (const void* data, int sizeInBytes
             const juce::File file ((juce::String) v.getProperty ("path", ""));
             if (slot >= 0 && slot < numSlots && file.existsAsFile())
             {
-                transforms[(size_t) slot].reverse = v.getProperty ("rev", false);
-                transforms[(size_t) slot].trimTail = v.getProperty ("trim", false);
-                transforms[(size_t) slot].length =
-                    (float) (double) v.getProperty ("len", 1.0);
+                auto& t = transforms[(size_t) slot];
+                t.reverse = v.getProperty ("rev", false);
+                t.trimTail = v.getProperty ("trim", false);
+                t.start = (float) (double) v.getProperty ("cs", 0.0);
+                // 0.7.0 stored a single "len" (kept head fraction).
+                t.end = (float) (double) v.getProperty ("ce",
+                            (double) v.getProperty ("len", 1.0));
+                t.fadeIn = (float) (double) v.getProperty ("fi", 0.0);
+                t.fadeOut = (float) (double) v.getProperty ("fo", 0.0);
                 loadSampleAsync (slot, file);   // completion applies the transform
             }
         }
