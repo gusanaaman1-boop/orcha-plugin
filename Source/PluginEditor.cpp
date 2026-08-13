@@ -22,9 +22,9 @@ OrchaAudioProcessorEditor::OrchaAudioProcessorEditor (OrchaAudioProcessor& p)
         };
         card->onClear = [this, i] { processor.clearSample (i); };
         card->onRoleChange = [this, i] (Role r) { processor.setUserRole (i, r); };
-        card->onTransformChange = [this, i] (bool rev, bool trim)
+        card->onTransformChange = [this, i] (SampleTransform::Settings t)
         {
-            processor.setTransform (i, { rev, trim });
+            processor.setTransform (i, t);
         };
         addAndMakeVisible (*card);
         sampleCards[(size_t) i] = std::move (card);
@@ -95,9 +95,7 @@ void OrchaAudioProcessorEditor::refresh()
         }
         if (sample != nullptr)
             loadStartedAt[(size_t) i] = 0;
-        const auto transform = processor.getTransform (i);
-        sampleCards[(size_t) i]->update (sample, loading,
-                                         transform.reverse, transform.trimTail);
+        sampleCards[(size_t) i]->update (sample, loading, processor.getTransform (i));
     }
 
     const int playing = processor.playingOption();

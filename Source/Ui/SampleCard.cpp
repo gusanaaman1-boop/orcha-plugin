@@ -18,8 +18,9 @@ SampleCard::SampleCard (int slotIndex) : slot (slotIndex)
         b->onClick = [this]
         {
             if (onTransformChange)
-                onTransformChange (reverseButton.getToggleState(),
-                                   trimButton.getToggleState());
+                onTransformChange ({ reverseButton.getToggleState(),
+                                     trimButton.getToggleState(),
+                                     transform.length });
         };
         addChildComponent (*b);
     }
@@ -37,25 +38,34 @@ SampleCard::SampleCard (int slotIndex) : slot (slotIndex)
 }
 
 void SampleCard::update (InputSample::Ptr s, bool nowLoading,
-                         bool reversed, bool trimmed)
+                         SampleTransform::Settings t)
 {
     // Timer-driven updates only repaint on an actual change.
     if (sample == s && loading == nowLoading && ! dragOver
-        && reverseButton.getToggleState() == reversed
-        && trimButton.getToggleState() == trimmed)
+        && transform.reverse == t.reverse && transform.trimTail == t.trimTail
+        && transform.length == t.length)
         return;
     sample = std::move (s);
     loading = nowLoading;
     dragOver = false;
+    transform = t;
     removeButton.setVisible (sample != nullptr);
     roleBox.setVisible (sample != nullptr);
     reverseButton.setVisible (sample != nullptr);
     trimButton.setVisible (sample != nullptr);
-    reverseButton.setToggleState (reversed, juce::dontSendNotification);
-    trimButton.setToggleState (trimmed, juce::dontSendNotification);
+    reverseButton.setToggleState (t.reverse, juce::dontSendNotification);
+    trimButton.setToggleState (t.trimTail, juce::dontSendNotification);
     if (sample != nullptr)
         roleBox.setSelectedId ((int) sample->userRole + 1, juce::dontSendNotification);
     repaint();
+}
+
+juce::Rectangle<float> SampleCard::waveArea() const
+{
+    auto area = getLocalBounds().reduced (12);
+    area.removeFromTop (18);
+    area.removeFromBottom (34);
+    return area.reduced (0, 3).toFloat();
 }
 
 void SampleCard::resized()
@@ -120,22 +130,81 @@ void SampleCard::paint (juce::Graphics& g)
     }
 
     auto info = area.removeFromBottom (34);
-    theme::paintWaveform (g, area.reduced (0, 3).toFloat(), sample->buffer, theme::turquoise);
+    const auto wave = waveArea();
+    theme::paintWaveform (g, wave, sample->buffer, theme::turquoise);
+
+    // Length gesture: while dragging, the amber cut line and the dimmed
+    // discard region preview where the sample will end.
+    if (draggingLength && pendingFraction < 0.999f)
+    {
+        const float cutX = wave.getX() + wave.getWidth() * pendingFraction;
+        g.setColour (theme::background.withAlpha (0.7f));
+        g.fillRect (juce::Rectangle<float> (cutX, wave.getY(),
+                                            wave.getRight() - cutX, wave.getHeight()));
+        g.setColour (theme::amber);
+        g.fillRect (cutX - 1.0f, wave.getY(), 2.0f, wave.getHeight());
+    }
 
     g.setColour (theme::textDim);
     g.setFont (theme::label (11.5f));
     g.drawText (sample->name, info.removeFromTop (16), juce::Justification::centredLeft);
-    // The resolved role tells the user what the analyzer decided.
+    // The resolved role, and the kept length when the sample is shortened.
+    juce::String detail;
     if (sample->userRole == Role::AUTO)
-        g.drawText ("AUTO -> " + juce::String (roleName (sample->resolvedRole)),
-                    info.withTrimmedRight (80), juce::Justification::centredLeft);
+        detail << "AUTO -> " << roleName (sample->resolvedRole);
+    if (transform.length < 0.999f)
+        detail << "   LEN " << juce::roundToInt (transform.length * 100.0f) << "%";
+    g.drawText (detail, info.withTrimmedRight (80), juce::Justification::centredLeft);
+}
+
+void SampleCard::mouseDown (const juce::MouseEvent& e)
+{
+    // A horizontal drag over the waveform shortens the sample to the cut
+    // point; double-click restores full length.
+    draggingLength = sample != nullptr && waveArea().contains (e.position);
+    pendingFraction = 1.0f;
+}
+
+void SampleCard::mouseDrag (const juce::MouseEvent& e)
+{
+    if (! draggingLength)
+        return;
+    const auto wave = waveArea();
+    pendingFraction = juce::jlimit (0.05f, 1.0f,
+        (e.position.x - wave.getX()) / juce::jmax (1.0f, wave.getWidth()));
+    repaint();
 }
 
 void SampleCard::mouseUp (const juce::MouseEvent& e)
 {
+    if (draggingLength && ! e.mouseWasClicked() && pendingFraction < 0.999f)
+    {
+        // The displayed wave is already the shortened one, so the gesture
+        // scales the current kept length.
+        auto t = transform;
+        t.length = juce::jlimit (0.02f, 1.0f, t.length * pendingFraction);
+        draggingLength = false;
+        if (onTransformChange)
+            onTransformChange (t);
+        return;
+    }
+    draggingLength = false;
+    repaint();
+
     if (sample == nullptr && ! loading
         && e.mouseWasClicked() && ! e.mods.isPopupMenu())
         openChooser();
+}
+
+void SampleCard::mouseDoubleClick (const juce::MouseEvent& e)
+{
+    if (sample != nullptr && waveArea().contains (e.position)
+        && transform.length < 0.999f && onTransformChange)
+    {
+        auto t = transform;
+        t.length = 1.0f;
+        onTransformChange (t);
+    }
 }
 
 void SampleCard::openChooser()

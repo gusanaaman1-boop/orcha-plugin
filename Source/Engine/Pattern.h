@@ -114,9 +114,9 @@ struct Pattern
     juce::String name;          // "DROP 01"
     double swing = 0.0;         // 0..1 of a 16th, applied to odd steps
     // Per-card polish, baked into the render (and therefore the dragged WAV):
-    // gentle fixed-amount effects, chosen in the step editor.
-    bool fxReverb = false;
-    bool fxDelay = false;
+    // reverb and delay amounts (0 = off), chosen in the step editor.
+    float fxReverb = 0.0f;
+    float fxDelay = 0.0f;
     std::vector<Event> events;
 
     int stepCount() const { return settings.bars * 16; }

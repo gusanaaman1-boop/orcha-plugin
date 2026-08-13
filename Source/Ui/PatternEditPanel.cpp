@@ -18,19 +18,26 @@ PatternEditPanel::PatternEditPanel (OrchaAudioProcessor& p) : processor (p)
     closeButton.onClick = [this] { close(); };
     addAndMakeVisible (closeButton);
 
-    // Gentle baked-in polish per card - fixed tasteful amounts, on or off.
-    for (auto* b : { &reverbButton, &delayButton })
+    // Baked-in polish per card, with an amount: reverb in red, delay in
+    // blue. The render fires when the gesture ends, not on every pixel.
+    auto initFxSlider = [this] (juce::Slider& s, juce::Colour colour)
     {
-        b->setClickingTogglesState (true);
-        b->setColour (juce::TextButton::buttonOnColourId, theme::turquoise);
-        b->onClick = [this]
+        s.setSliderStyle (juce::Slider::LinearHorizontal);
+        s.setTextBoxStyle (juce::Slider::NoTextBox, true, 0, 0);
+        s.setRange (0.0, 1.0);
+        s.setColour (juce::Slider::trackColourId, colour);
+        s.setColour (juce::Slider::thumbColourId, colour.brighter (0.4f));
+        s.setColour (juce::Slider::backgroundColourId, theme::panelLight);
+        s.onDragEnd = [this]
         {
             if (index >= 0)
-                processor.setOptionFx (index, reverbButton.getToggleState(),
-                                       delayButton.getToggleState());
+                processor.setOptionFx (index, (float) reverbSlider.getValue(),
+                                       (float) delaySlider.getValue());
         };
-        addAndMakeVisible (*b);
-    }
+        addAndMakeVisible (s);
+    };
+    initFxSlider (reverbSlider, juce::Colour (0xffe85d4c));   // red
+    initFxSlider (delaySlider, juce::Colour (0xff4da3ff));    // strong blue
 
     setVisible (false);
 }
@@ -42,10 +49,10 @@ void PatternEditPanel::openFor (int optionIndex)
         return;
     index = optionIndex;
     working = processor.option (optionIndex).pattern;
-    reverbButton.setToggleState (processor.option (optionIndex).fxReverb,
-                                 juce::dontSendNotification);
-    delayButton.setToggleState (processor.option (optionIndex).fxDelay,
-                                juce::dontSendNotification);
+    reverbSlider.setValue (processor.option (optionIndex).fxReverb,
+                           juce::dontSendNotification);
+    delaySlider.setValue (processor.option (optionIndex).fxDelay,
+                          juce::dontSendNotification);
     setVisible (true);
     toFront (false);
     repaint();
@@ -128,6 +135,15 @@ void PatternEditPanel::paint (juce::Graphics& g)
     g.drawText ("EDIT  -  " + working.name
                     + (index >= 0 && processor.option (index).edited ? " *" : ""),
                 18, 12, 300, 22, juce::Justification::centredLeft);
+
+    // FX captions, matching their slider colours.
+    g.setFont (theme::heading (10.0f));
+    g.setColour (juce::Colour (0xffe85d4c));
+    g.drawText ("REVERB", reverbSlider.getX() - 2, reverbSlider.getY() - 11,
+                reverbSlider.getWidth(), 12, juce::Justification::centredLeft);
+    g.setColour (juce::Colour (0xff4da3ff));
+    g.drawText ("DELAY", delaySlider.getX() - 2, delaySlider.getY() - 11,
+                delaySlider.getWidth(), 12, juce::Justification::centredLeft);
 
     const auto grid = gridArea();
     const int steps = juce::jmax (1, working.stepCount());
@@ -218,10 +234,10 @@ void PatternEditPanel::resized()
     closeButton.setBounds (top.removeFromRight (76));
     top.removeFromRight (6);
     resetButton.setBounds (top.removeFromRight (70));
-    top.removeFromRight (14);
-    delayButton.setBounds (top.removeFromRight (66));
-    top.removeFromRight (4);
-    reverbButton.setBounds (top.removeFromRight (72));
+    top.removeFromRight (16);
+    delaySlider.setBounds (top.removeFromRight (110));
+    top.removeFromRight (44);   // room for the DELAY caption (painted)
+    reverbSlider.setBounds (top.removeFromRight (110));
 }
 
 void PatternEditPanel::mouseDown (const juce::MouseEvent& e)

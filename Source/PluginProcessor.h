@@ -32,8 +32,8 @@ public:
         bool ready = false;             // false while a job is rebuilding it
         bool present = false;           // slot has ever been generated
         bool edited = false;            // user edits win over the generator
-        bool fxReverb = false;          // card-level polish, survives regen
-        bool fxDelay = false;
+        float fxReverb = 0.0f;          // card-level polish amounts (0 = off),
+        float fxDelay = 0.0f;           // survive regeneration
     };
 
     InputSample::Ptr getSample (int slot) const   { return samples[(size_t) slot]; }
@@ -62,8 +62,9 @@ public:
     void applyEditedPattern (int index, Pattern edited);
     // Back to the generated version (same seeds), dropping the edits.
     void resetOptionEdits (int index);
-    // Gentle baked-in reverb/delay for one card; re-renders the same pattern.
-    void setOptionFx (int index, bool reverb, bool delay);
+    // Baked-in reverb/delay amounts (0..1) for one card; re-renders the same
+    // pattern without regenerating it.
+    void setOptionFx (int index, float reverb, float delay);
     void toggleFavorite (int index)     { options[(size_t) index].favorite = ! options[(size_t) index].favorite; notifyModel(); }
     void togglePlay (int index);
     bool anySampleLoaded() const;

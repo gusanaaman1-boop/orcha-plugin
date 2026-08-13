@@ -55,6 +55,22 @@ InputSample::Ptr SampleTransform::apply (const InputSample& raw, Settings settin
         }
     }
 
+    // Shorten: keep the head of the (already trimmed) sample. The 3 ms
+    // fade-out keeps the cut clean at any position.
+    const float keep = juce::jlimit (0.02f, 1.0f, settings.length);
+    if (keep < 0.999f)
+    {
+        const int newLen = juce::jmax (16, (int) ((float) numSamples * keep));
+        juce::AudioBuffer<float> shorter (chans, newLen);
+        for (int ch = 0; ch < chans; ++ch)
+            shorter.copyFrom (ch, 0, buf, ch, 0, newLen);
+        const int fade = juce::jmin (newLen / 3, (int) (raw.sourceSampleRate * 0.003));
+        if (fade > 0)
+            shorter.applyGainRamp (newLen - fade, fade, 1.0f, 0.0f);
+        buf = std::move (shorter);
+        numSamples = newLen;
+    }
+
     if (settings.reverse)
         buf.reverse (0, numSamples);
 

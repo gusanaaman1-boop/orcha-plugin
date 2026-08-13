@@ -25,7 +25,8 @@ juce::File RenderCache::fileFor (const Pattern& p, double bpm, double sampleRate
        << juce::roundToInt (p.settings.energy * 100.0f) << '_'
        << juce::roundToInt (p.settings.density * 100.0f) << '_'
        << juce::roundToInt (p.settings.randomness * 100.0f)
-       << (p.fxReverb ? "_rvb" : "") << (p.fxDelay ? "_dly" : "");
+       << "_r" << juce::roundToInt (p.fxReverb * 100.0f)
+       << "_d" << juce::roundToInt (p.fxDelay * 100.0f);
 
     // Cubase shows the file name in the pool - keep it meaningful first.
     return cacheDirectory().getChildFile ("ORCHA_" + juce::String (modeName (p.settings.mode))

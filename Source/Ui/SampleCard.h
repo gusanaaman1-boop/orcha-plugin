@@ -2,6 +2,7 @@
 
 #include "Theme.h"
 #include "../Model/InputSample.h"
+#include "../Engine/SampleTransform.h"
 
 namespace orcha
 {
@@ -17,15 +18,18 @@ public:
     std::function<void (const juce::File&)> onFileChosen;
     std::function<void()> onClear;
     std::function<void (Role)> onRoleChange;
-    std::function<void (bool reverse, bool trim)> onTransformChange;
+    std::function<void (SampleTransform::Settings)> onTransformChange;
 
     // nullptr = empty slot. loading = a decode job is in flight.
     void update (InputSample::Ptr sample, bool loading,
-                 bool reversed = false, bool trimmed = false);
+                 SampleTransform::Settings transform = {});
 
     void paint (juce::Graphics&) override;
     void resized() override;
+    void mouseDown (const juce::MouseEvent&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
     void mouseUp (const juce::MouseEvent&) override;
+    void mouseDoubleClick (const juce::MouseEvent&) override;
 
     bool isInterestedInFileDrag (const juce::StringArray& files) override;
     void filesDropped (const juce::StringArray& files, int, int) override;
@@ -35,10 +39,15 @@ public:
 private:
     void openChooser();
 
+    juce::Rectangle<float> waveArea() const;
+
     int slot;
     InputSample::Ptr sample;
     bool loading = false;
     bool dragOver = false;
+    SampleTransform::Settings transform;
+    bool draggingLength = false;
+    float pendingFraction = 1.0f;   // of the currently displayed wave
 
     juce::TextButton removeButton { "X" };
     juce::TextButton reverseButton { "REV" }, trimButton { "TRIM" };

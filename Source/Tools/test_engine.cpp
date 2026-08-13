@@ -561,6 +561,11 @@ int main()
         check (trimmed->buffer.getMagnitude (0, trimmed->buffer.getNumSamples()) > 0.4f,
                "trim keeps the audio itself");
 
+        const auto half = orcha::SampleTransform::apply (*padded, { false, false, 0.5f });
+        check (std::abs (half->buffer.getNumSamples()
+                         - padded->buffer.getNumSamples() / 2) <= 1,
+               "length control halves the sample");
+
         const auto reversed = orcha::SampleTransform::apply (*padded, { true, false });
         bool mirrored = reversed->buffer.getNumSamples() == padded->buffer.getNumSamples();
         const int n = padded->buffer.getNumSamples();

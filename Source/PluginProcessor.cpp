@@ -190,13 +190,13 @@ void OrchaAudioProcessor::resetOptionEdits (int index)
     enqueueBuild ({ index });
 }
 
-void OrchaAudioProcessor::setOptionFx (int index, bool reverb, bool delay)
+void OrchaAudioProcessor::setOptionFx (int index, float reverb, float delay)
 {
     if (index < 0 || index >= numOptions)
         return;
     auto& opt = options[(size_t) index];
-    opt.fxReverb = reverb;
-    opt.fxDelay = delay;
+    opt.fxReverb = juce::jlimit (0.0f, 1.0f, reverb);
+    opt.fxDelay = juce::jlimit (0.0f, 1.0f, delay);
     if (! opt.present)
         return;
     // Same pattern, new polish: render as-is, no regeneration.
@@ -220,7 +220,7 @@ void OrchaAudioProcessor::enqueueBuild (std::vector<int> indices,
         juce::String name;
         bool useExisting = false;   // edited pattern: render as-is, no generate
         Pattern existing;
-        bool fxReverb = false, fxDelay = false;   // card-level, survives regen
+        float fxReverb = 0.0f, fxDelay = 0.0f;    // card-level, survives regen
     };
     std::vector<BuildInput> inputs;
     for (int i : indices)
@@ -497,6 +497,7 @@ void OrchaAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
             v.setProperty ("role", roleName (s->userRole), nullptr);
             v.setProperty ("rev", transforms[(size_t) i].reverse, nullptr);
             v.setProperty ("trim", transforms[(size_t) i].trimTail, nullptr);
+            v.setProperty ("len", (double) transforms[(size_t) i].length, nullptr);
             ss.appendChild (v, nullptr);
         }
     root.appendChild (ss, nullptr);
@@ -518,8 +519,8 @@ void OrchaAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
                                            : juce::String (modeName (settings.mode)) + " "
                                              + juce::String (i + 1).paddedLeft ('0', 2), nullptr);
         v.setProperty ("favorite", opt.favorite, nullptr);
-        v.setProperty ("rvb", opt.fxReverb, nullptr);
-        v.setProperty ("dly", opt.fxDelay, nullptr);
+        v.setProperty ("rvb", (double) opt.fxReverb, nullptr);
+        v.setProperty ("dly", (double) opt.fxDelay, nullptr);
 
         // A user-edited pattern cannot be rebuilt from seeds - store it whole.
         if (opt.edited)
@@ -595,8 +596,9 @@ void OrchaAudioProcessor::setStateInformation (const void* data, int sizeInBytes
                 : LoopGenerator::deriveSeed (motif, 4242);
             pendingSeeds[(size_t) i] = { motif, orn };
             options[(size_t) i].favorite = v.getProperty ("favorite", false);
-            options[(size_t) i].fxReverb = v.getProperty ("rvb", false);
-            options[(size_t) i].fxDelay = v.getProperty ("dly", false);
+            // 0.6.0 saved these as bools; a bool var reads back as 0/1.
+            options[(size_t) i].fxReverb = (float) (double) v.getProperty ("rvb", 0.0);
+            options[(size_t) i].fxDelay = (float) (double) v.getProperty ("dly", 0.0);
 
             if ((bool) v.getProperty ("edited", false))
             {
@@ -645,6 +647,8 @@ void OrchaAudioProcessor::setStateInformation (const void* data, int sizeInBytes
             {
                 transforms[(size_t) slot].reverse = v.getProperty ("rev", false);
                 transforms[(size_t) slot].trimTail = v.getProperty ("trim", false);
+                transforms[(size_t) slot].length =
+                    (float) (double) v.getProperty ("len", 1.0);
                 loadSampleAsync (slot, file);   // completion applies the transform
             }
         }

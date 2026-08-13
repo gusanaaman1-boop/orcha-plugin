@@ -13,8 +13,12 @@ namespace
     // the effect and keep the second - the first pass's tail wraps into it,
     // so the loop start already carries the reverb/delay of the loop end.
     void applyLoopFx (juce::AudioBuffer<float>& loop, double sampleRate, double bpm,
-                      bool reverb, bool delay)
+                      float reverbAmt, float delayAmt)
     {
+        reverbAmt = juce::jlimit (0.0f, 1.0f, reverbAmt);
+        delayAmt = juce::jlimit (0.0f, 1.0f, delayAmt);
+        const bool reverb = reverbAmt > 0.01f;
+        const bool delay = delayAmt > 0.01f;
         if (! reverb && ! delay)
             return;
 
@@ -34,7 +38,10 @@ namespace
             std::vector<float> dl ((size_t) delaySamples * 2, 0.0f);
             float hp0 = 0.0f, hp1 = 0.0f;
             size_t pos = 0;
-            const float feedback = 0.32f, wet = 0.22f;
+            // The amount drives both how loud the echoes are and how long
+            // they regenerate.
+            const float feedback = 0.2f + 0.3f * delayAmt;
+            const float wet = 0.32f * delayAmt;
             for (int i = 0; i < twice.getNumSamples(); ++i)
                 for (int ch = 0; ch < 2; ++ch)
                 {
@@ -58,10 +65,10 @@ namespace
             juce::Reverb verb;
             verb.setSampleRate (sampleRate);
             juce::Reverb::Parameters params;
-            params.roomSize = 0.45f;
+            params.roomSize = 0.35f + 0.3f * reverbAmt;
             params.damping = 0.5f;
-            params.wetLevel = 0.16f;   // gentle - a halo, not a wash
-            params.dryLevel = 0.9f;
+            params.wetLevel = 0.3f * reverbAmt;   // halo at low, wash at full
+            params.dryLevel = 1.0f - 0.25f * reverbAmt;
             params.width = 1.0f;
             verb.setParameters (params);
             verb.processStereo (twice.getWritePointer (0), twice.getWritePointer (1),
