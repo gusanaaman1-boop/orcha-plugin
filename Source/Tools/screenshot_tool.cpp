@@ -106,7 +106,8 @@ int main (int argc, char* argv[])
         {
             const auto& a = processor->option (i);
             const auto& b = restored->option (i);
-            if (a.pattern.seed != b.pattern.seed)
+            if (a.pattern.seed != b.pattern.seed
+                || a.pattern.ornamentSeed != b.pattern.ornamentSeed)
             {
                 std::cout << "STATE FAIL: option " << i << " seed mismatch\n";
                 ++failures;

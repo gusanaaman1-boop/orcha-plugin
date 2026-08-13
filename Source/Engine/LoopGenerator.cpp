@@ -45,37 +45,48 @@ namespace
 
 Pattern LoopGenerator::generate (juce::uint64 seed, const GeneratorSettings& settings)
 {
+    return generate (seed, deriveSeed (seed, 4242), settings);
+}
+
+Pattern LoopGenerator::generate (juce::uint64 motifSeed, juce::uint64 ornamentSeed,
+                                 const GeneratorSettings& settings)
+{
     Pattern p;
-    p.seed = seed;
+    p.seed = motifSeed;
+    p.ornamentSeed = ornamentSeed;
     p.settings = settings;
 
-    Rng rng (seed);
+    // Two independent streams: rngM decides the motif, rng decides the
+    // decoration. rngM's draw order must stay fixed - a new draw inserted
+    // before an old one changes every stored pattern.
+    Rng rngM (motifSeed);
+    Rng rng (ornamentSeed);
     const auto& style = RhythmStyle::get (settings.family);
     const auto profile = sectionProfile (settings.mode);
     const int steps = p.stepCount();
     const int bars = settings.bars;
 
-    // --- 1. skeleton + phrase plan --------------------------------------------
-    const auto& skel = style.skeletons[(size_t) rng.pick ((int) style.skeletons.size())];
-    p.swing = skel.defaultSwing * (0.6 + 0.8 * rng.uni());
+    // --- 1. skeleton + phrase plan (motif) -------------------------------------
+    const auto& skel = style.skeletons[(size_t) rngM.pick ((int) style.skeletons.size())];
+    p.swing = skel.defaultSwing * (0.6 + 0.8 * rngM.uni());
     if (settings.mode == Mode::GROOVE)
-        p.swing = juce::jlimit (0.0, 1.0, p.swing + 0.08 * rng.uni());
+        p.swing = juce::jlimit (0.0, 1.0, p.swing + 0.08 * rngM.uni());
 
     // Which role leads (gets the ornament budget) varies per option.
-    const Role leadRole = rng.chance (0.5f) ? Role::HIGH : Role::MID;
+    const Role leadRole = rngM.chance (0.5f) ? Role::HIGH : Role::MID;
 
-    // --- 2. protected anchors + motif across all bars -------------------------
+    // --- 2. protected anchors + motif across all bars (motif) ------------------
     // Bar-level mutation mask: later bars may vary, bar 0 states the motif.
     for (int bar = 0; bar < bars; ++bar)
     {
-        const bool variedBar = bar > 0 && rng.chance (0.35f + 0.4f * settings.randomness);
+        const bool variedBar = bar > 0 && rngM.chance (0.35f + 0.4f * settings.randomness);
         for (const auto& hit : skel.hits)
         {
             // Sparse sections thin even the skeleton - but never the downbeat.
             const bool downbeat = hit.step == 0 && hit.role == Role::LOW;
-            if (profile.sparse && ! downbeat && rng.chance (0.45f))
+            if (profile.sparse && ! downbeat && rngM.chance (0.45f))
                 continue;
-            if (variedBar && ! downbeat && hit.role != Role::LOW && rng.chance (0.3f))
+            if (variedBar && ! downbeat && hit.role != Role::LOW && rngM.chance (0.3f))
                 continue;
 
             Event e;
@@ -249,6 +260,23 @@ Pattern LoopGenerator::generate (juce::uint64 seed, const GeneratorSettings& set
             pos += spacing;
             if (accelerate)
                 spacing = juce::jmax (0.25, spacing * 0.8);
+        }
+    }
+
+    // 4-bar phrases get sentence structure: a lighter answer-fill at the half
+    // (end of bar 2), so the phrase reads 2+2 instead of 4x1.
+    if (bars == 4 && rng.chance (0.25f + profile.fillChance * 0.4f))
+    {
+        const Role halfRole = rng.chance (0.5f) ? Role::MID : Role::HIGH;
+        for (double pos = 30.5; pos < 31.9; pos += 0.5)
+        {
+            Event e;
+            e.pos = pos;
+            e.role = halfRole;
+            e.roll = true;
+            e.velocity = 0.3f + 0.2f * rng.uni();
+            e.gateSteps = 0.5;
+            p.events.push_back (e);
         }
     }
 

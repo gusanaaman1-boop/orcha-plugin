@@ -15,8 +15,9 @@ public:
     explicit OptionCard (int indexIn);
 
     std::function<void()> onPlay, onFavorite, onRegenerate;
-    // Returns the WAV to drag, or an invalid File if not available.
+    // Return the WAV / MIDI file to drag, or an invalid File if not available.
     std::function<juce::File()> getDragFile;
+    std::function<juce::File()> getMidiDragFile;
 
     void update (PreviewPlayer::Loop::Ptr loop, const juce::String& name,
                  bool present, bool ready, bool favorite, bool playing);
@@ -31,6 +32,7 @@ private:
     juce::Rectangle<float> heartArea() const;
     juce::Rectangle<float> regenArea() const;
     juce::Rectangle<float> dragArea() const;
+    juce::Rectangle<float> midiArea() const;
 
     int index;
     PreviewPlayer::Loop::Ptr loop;

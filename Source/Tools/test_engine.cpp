@@ -8,6 +8,7 @@
 #include "../Engine/PatternValidator.h"
 #include "../Engine/LoopRenderer.h"
 #include "../Engine/RenderCache.h"
+#include "../Engine/MidiExporter.h"
 #include "../Playback/PreviewPlayer.h"
 
 using namespace orcha;
@@ -440,6 +441,80 @@ int main()
         out.clear();
         stopped.process (out, -1.0, false, sr);
         check (mag() > 0.1f, "stopped host previews immediately");
+    }
+
+    // --- variation preserves the motif ---------------------------------------------
+    {
+        // Same motif seed + different ornament seeds = same groove, another
+        // take: every protected anchor stays put, but the takes still differ.
+        GeneratorSettings s;
+        s.mode = Mode::GROOVE;   // no DROP hole, so anchors are orn-independent
+        s.family = Family::ARABIC;
+        auto anchorsOf = [] (const Pattern& p)
+        {
+            juce::String a;
+            for (const auto& e : p.events)
+                if (e.protectedAnchor)
+                    a << juce::roundToInt (e.pos * 4.0) << ':' << (int) e.role << ';';
+            return a;
+        };
+        int differing = 0;
+        for (int i = 0; i < 24; ++i)
+        {
+            const auto motif = LoopGenerator::deriveSeed (777, i);
+            const auto a = PatternValidator::validate (LoopGenerator::generate (
+                motif, LoopGenerator::deriveSeed (111, i), s));
+            const auto b = PatternValidator::validate (LoopGenerator::generate (
+                motif, LoopGenerator::deriveSeed (222, i), s));
+            check (anchorsOf (a) == anchorsOf (b),
+                   "variation keeps every protected anchor");
+            check (a.swing == b.swing, "variation keeps the swing feel");
+            if (a.signature() != b.signature())
+                ++differing;
+        }
+        check (differing >= 12, "variations still differ in their ornaments");
+
+        // And full two-seed determinism.
+        const auto x = PatternValidator::validate (LoopGenerator::generate (9, 8, s));
+        const auto y = PatternValidator::validate (LoopGenerator::generate (9, 8, s));
+        check (x.signature() == y.signature() && x.events.size() == y.events.size(),
+               "two-seed generate is deterministic");
+    }
+
+    // --- MIDI export ---------------------------------------------------------------
+    {
+        GeneratorSettings s;
+        s.bars = 2;
+        auto p = PatternValidator::validate (LoopGenerator::generate (271828, s));
+        p.name = "MIDI 01";
+        const double bpm = 126.0;
+        const auto mid = MidiExporter::write (p, bpm);
+        check (mid.existsAsFile() && mid.getSize() > 50, "MIDI file written");
+
+        juce::FileInputStream in (mid);
+        juce::MidiFile midi;
+        check (in.openedOk() && midi.readFrom (in), "MIDI file parses back");
+        check (midi.getNumTracks() == 1, "one track");
+
+        int noteOns = 0;
+        double tempoUs = 0.0;
+        double maxTick = 0.0;
+        if (midi.getNumTracks() == 1)
+            for (const auto* ev : *midi.getTrack (0))
+            {
+                if (ev->message.isNoteOn())
+                {
+                    ++noteOns;
+                    maxTick = juce::jmax (maxTick, ev->message.getTimeStamp());
+                }
+                if (ev->message.isTempoMetaEvent())
+                    tempoUs = ev->message.getTempoSecondsPerQuarterNote() * 1.0e6;
+            }
+        check (noteOns == (int) p.events.size(), "one note per event");
+        check (std::abs (tempoUs - 60'000'000.0 / bpm) < 1.0, "tempo written");
+        // 2 bars at 960 ppq = 7680 ticks; nothing may start beyond the loop.
+        check (maxTick < 2 * 4 * 960, "no note starts past the loop end");
+        mid.deleteFile();
     }
 
     std::cout << (failures == 0 ? "ALL OK" : "FAILED") << " - "

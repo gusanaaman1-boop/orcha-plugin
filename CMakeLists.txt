@@ -6,7 +6,7 @@ if(APPLE)
     set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "" FORCE)
 endif()
 
-project(Orcha VERSION 0.2.0 LANGUAGES C CXX)
+project(Orcha VERSION 0.3.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -87,7 +87,8 @@ set(ORCHA_ENGINE_SOURCES
     Source/Engine/LoopGenerator.cpp
     Source/Engine/PatternValidator.cpp
     Source/Engine/LoopRenderer.cpp
-    Source/Engine/RenderCache.cpp)
+    Source/Engine/RenderCache.cpp
+    Source/Engine/MidiExporter.cpp)
 
 set(ORCHA_PLUGIN_SOURCES
     ${ORCHA_ENGINE_SOURCES}
@@ -100,7 +101,7 @@ set(ORCHA_PLUGIN_SOURCES
     Source/Ui/OptionCard.cpp)
 
 set(ORCHA_OWN_SOURCES ${ORCHA_PLUGIN_SOURCES} Source/Tools/test_engine.cpp
-    Source/Tools/screenshot_tool.cpp)
+    Source/Tools/screenshot_tool.cpp Source/Tools/audition_tool.cpp)
 set_source_files_properties(${ORCHA_OWN_SOURCES}
     PROPERTIES COMPILE_OPTIONS "${ORCHA_WARNING_FLAGS}")
 
@@ -160,6 +161,21 @@ target_compile_definitions(OrchaTests PUBLIC
     ${ORCHA_COMMON_DEFS}
     JUCE_STANDALONE_APPLICATION=1)
 target_link_libraries(OrchaTests
+    PRIVATE juce::juce_audio_utils juce::juce_audio_formats juce::juce_dsp
+    PUBLIC juce::juce_recommended_config_flags)
+
+# --- audition renderer ---------------------------------------------------------
+#     build/OrchaAudition_artefacts/<config>/OrchaAudition out-dir bpm <samples>
+juce_add_console_app(OrchaAudition PRODUCT_NAME "OrchaAudition")
+juce_generate_juce_header(OrchaAudition)
+target_sources(OrchaAudition PRIVATE
+    Source/Tools/audition_tool.cpp
+    ${ORCHA_ENGINE_SOURCES})
+target_include_directories(OrchaAudition PUBLIC "${CMAKE_BINARY_DIR}/generated")
+target_compile_definitions(OrchaAudition PUBLIC
+    ${ORCHA_COMMON_DEFS}
+    JUCE_STANDALONE_APPLICATION=1)
+target_link_libraries(OrchaAudition
     PRIVATE juce::juce_audio_utils juce::juce_audio_formats juce::juce_dsp
     PUBLIC juce::juce_recommended_config_flags)
 

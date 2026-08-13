@@ -6,6 +6,7 @@
 #include "Engine/PatternValidator.h"
 #include "Engine/LoopRenderer.h"
 #include "Engine/RenderCache.h"
+#include "Engine/MidiExporter.h"
 
 namespace orcha
 {
@@ -85,7 +86,7 @@ void OrchaAudioProcessor::rolesChanged()
     // render yet) get rebuilt with the new role map.
     std::vector<int> toBuild;
     for (int i = 0; i < numOptions; ++i)
-        if (pendingSeeds[(size_t) i] != 0)
+        if (pendingSeeds[(size_t) i].motif != 0)
             toBuild.push_back (i);
     if (! toBuild.empty() && anySampleLoaded())
         enqueueBuild (std::move (toBuild));
@@ -107,7 +108,8 @@ void OrchaAudioProcessor::generateAll()
         auto& opt = options[(size_t) i];
         if (opt.favorite && opt.present)
             continue;                   // favorites survive GENERATE MORE
-        pendingSeeds[(size_t) i] = LoopGenerator::deriveSeed (master, i);
+        pendingSeeds[(size_t) i] = { LoopGenerator::deriveSeed (master, i),
+                                     LoopGenerator::deriveSeed (~master, i) };
         opt.ready = false;
         toBuild.push_back (i);
     }
@@ -119,10 +121,15 @@ void OrchaAudioProcessor::regenerateOption (int index)
     if (index < 0 || index >= numOptions || ! anySampleLoaded())
         return;
     auto& rnd = juce::Random::getSystemRandom();
-    const juce::uint64 master = ((juce::uint64) (juce::uint32) rnd.nextInt() << 32)
-                              ^ (juce::uint64) juce::Time::getHighResolutionTicks();
-    pendingSeeds[(size_t) index] = LoopGenerator::deriveSeed (master, index);
-    options[(size_t) index].ready = false;
+    const juce::uint64 fresh = ((juce::uint64) (juce::uint32) rnd.nextInt() << 32)
+                             ^ (juce::uint64) juce::Time::getHighResolutionTicks();
+    auto& opt = options[(size_t) index];
+    // Same groove, another take: the motif seed survives, only the
+    // ornament seed re-rolls. A never-generated card starts from scratch.
+    pendingSeeds[(size_t) index] = {
+        opt.present ? opt.pattern.seed : LoopGenerator::deriveSeed (fresh, index),
+        LoopGenerator::deriveSeed (~fresh, index) };
+    opt.ready = false;
     enqueueBuild ({ index });
 }
 
@@ -136,7 +143,7 @@ void OrchaAudioProcessor::enqueueBuild (std::vector<int> indices)
     struct BuildInput
     {
         int index;
-        juce::uint64 seed;
+        SeedPair seeds;
         juce::String name;
     };
     std::vector<BuildInput> inputs;
@@ -185,15 +192,17 @@ void OrchaAudioProcessor::enqueueBuild (std::vector<int> indices)
 
             // Reseed until this option differs meaningfully from everything
             // already on screen - "12 clearly different results" is a promise.
-            juce::uint64 seed = in.seed;
+            // Only the ornament seed re-rolls, so a variation request never
+            // loses its motif to the diversity check.
+            juce::uint64 orn = in.seeds.orn;
             Pattern pattern;
             for (int attempt = 0; attempt < 8; ++attempt)
             {
                 pattern = PatternValidator::validate (
-                    LoopGenerator::generate (seed, settingsCopy));
+                    LoopGenerator::generate (in.seeds.motif, orn, settingsCopy));
                 if (! existingSigs.contains (pattern.signature()))
                     break;
-                seed = LoopGenerator::deriveSeed (seed, 7777 + attempt);
+                orn = LoopGenerator::deriveSeed (orn, 7777 + attempt);
             }
             existingSigs.add (pattern.signature());
             pattern.name = in.name;
@@ -216,7 +225,7 @@ void OrchaAudioProcessor::enqueueBuild (std::vector<int> indices)
                 opt.wavFile = wav;
                 opt.ready = true;
                 opt.present = true;
-                self->pendingSeeds[(size_t) index] = pattern.seed;
+                self->pendingSeeds[(size_t) index] = { pattern.seed, pattern.ornamentSeed };
                 // A playing card follows its refreshed audio seamlessly.
                 if (self->preview.playingOption() == index)
                     self->preview.play (loop);
@@ -240,7 +249,8 @@ void OrchaAudioProcessor::rerenderAtCurrentTempo()
     for (int i = 0; i < numOptions; ++i)
         if (options[(size_t) i].present)
         {
-            pendingSeeds[(size_t) i] = options[(size_t) i].pattern.seed;
+            pendingSeeds[(size_t) i] = { options[(size_t) i].pattern.seed,
+                                         options[(size_t) i].pattern.ornamentSeed };
             present.push_back (i);
         }
     if (! present.empty() && anySampleLoaded())
@@ -273,6 +283,16 @@ juce::File OrchaAudioProcessor::ensureWavFor (int index)
     opt.wavFile = RenderCache::write (opt.loop->buffer, opt.pattern,
                                       opt.loop->bpm, srAtomic.load());
     return opt.wavFile;
+}
+
+juce::File OrchaAudioProcessor::ensureMidiFor (int index)
+{
+    if (index < 0 || index >= numOptions)
+        return {};
+    const auto& opt = options[(size_t) index];
+    if (! opt.present || ! opt.ready || opt.loop == nullptr)
+        return {};
+    return MidiExporter::write (opt.pattern, opt.loop->bpm);
 }
 
 // --- audio ---------------------------------------------------------------------
@@ -340,7 +360,7 @@ void OrchaAudioProcessor::notifyModel()
 void OrchaAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
     juce::ValueTree root ("ORCHA");
-    root.setProperty ("schema", 1, nullptr);
+    root.setProperty ("schema", 2, nullptr);
 
     juce::ValueTree st ("settings");
     st.setProperty ("mode", modeName (settings.mode), nullptr);
@@ -368,12 +388,14 @@ void OrchaAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
     for (int i = 0; i < numOptions; ++i)
     {
         const auto& opt = options[(size_t) i];
-        if (! opt.present && pendingSeeds[(size_t) i] == 0)
+        if (! opt.present && pendingSeeds[(size_t) i].motif == 0)
             continue;
         juce::ValueTree v ("option");
         v.setProperty ("index", i, nullptr);
         v.setProperty ("seed", juce::String::toHexString (
-            (juce::int64) (opt.present ? opt.pattern.seed : pendingSeeds[(size_t) i])), nullptr);
+            (juce::int64) (opt.present ? opt.pattern.seed : pendingSeeds[(size_t) i].motif)), nullptr);
+        v.setProperty ("orn", juce::String::toHexString (
+            (juce::int64) (opt.present ? opt.pattern.ornamentSeed : pendingSeeds[(size_t) i].orn)), nullptr);
         v.setProperty ("name", opt.present ? opt.pattern.name
                                            : juce::String (modeName (settings.mode)) + " "
                                              + juce::String (i + 1).paddedLeft ('0', 2), nullptr);
@@ -412,7 +434,7 @@ void OrchaAudioProcessor::setStateInformation (const void* data, int sizeInBytes
 
     for (auto& opt : options)
         opt = {};
-    pendingSeeds.fill (0);
+    pendingSeeds.fill ({});
 
     if (auto os = root.getChildWithName ("options"); os.isValid())
         for (const auto& v : os)
@@ -420,8 +442,16 @@ void OrchaAudioProcessor::setStateInformation (const void* data, int sizeInBytes
             const int i = v.getProperty ("index", -1);
             if (i < 0 || i >= numOptions)
                 continue;
-            pendingSeeds[(size_t) i] = (juce::uint64) v.getProperty ("seed", "0")
-                                           .toString().getHexValue64();
+            const auto motif = (juce::uint64) v.getProperty ("seed", "0")
+                                   .toString().getHexValue64();
+            // Schema 1 states carry one seed; the single-seed generate()
+            // derived its ornament stream exactly like this, so old projects
+            // reproduce their loops bit for bit.
+            const juce::String ornHex = v.getProperty ("orn", "");
+            const auto orn = ornHex.isNotEmpty()
+                ? (juce::uint64) ornHex.getHexValue64()
+                : LoopGenerator::deriveSeed (motif, 4242);
+            pendingSeeds[(size_t) i] = { motif, orn };
             options[(size_t) i].favorite = v.getProperty ("favorite", false);
         }
 

@@ -41,6 +41,11 @@ juce::Rectangle<float> OptionCard::dragArea() const
     return { (float) getWidth() - 76.0f, (float) getHeight() - 26.0f, 68.0f, 20.0f };
 }
 
+juce::Rectangle<float> OptionCard::midiArea() const
+{
+    return { (float) getWidth() - 122.0f, (float) getHeight() - 26.0f, 42.0f, 20.0f };
+}
+
 void OptionCard::paint (juce::Graphics& g)
 {
     auto bounds = getLocalBounds().toFloat().reduced (1.0f);
@@ -139,6 +144,18 @@ void OptionCard::paint (juce::Graphics& g)
                                      c.y - radius * std::cos (0.6f)));
     }
 
+    // MIDI drag handle: same gesture, lands as editable notes instead of audio.
+    {
+        auto ma = midiArea();
+        g.setColour (theme::panelLight.withAlpha (0.8f));
+        g.fillRoundedRectangle (ma, 4.0f);
+        g.setColour (theme::outline);
+        g.drawRoundedRectangle (ma, 4.0f, 1.0f);
+        g.setColour (ready ? theme::turquoise.withAlpha (0.9f) : theme::textDim);
+        g.setFont (theme::heading (10.0f));
+        g.drawText ("MIDI", ma, juce::Justification::centred);
+    }
+
     // Drag handle.
     {
         auto da = dragArea();
@@ -177,14 +194,18 @@ void OptionCard::mouseDrag (const juce::MouseEvent& e)
     if (dragging || ! ready || getDragFile == nullptr
         || e.getDistanceFromDragStart() < 8)
         return;
-    // Buttons stay clickable: drags only start from the handle or waveform,
+    // Buttons stay clickable: drags only start from the handles or waveform,
     // not from the play/favorite/regenerate hotspots.
     if (playArea().contains (e.mouseDownPosition)
         || heartArea().contains (e.mouseDownPosition)
         || regenArea().contains (e.mouseDownPosition))
         return;
 
-    const auto file = getDragFile();
+    // A drag that begins on the MIDI chip carries the .mid; anywhere else
+    // carries the rendered WAV.
+    const bool wantMidi = midiArea().contains (e.mouseDownPosition)
+                          && getMidiDragFile != nullptr;
+    const auto file = wantMidi ? getMidiDragFile() : getDragFile();
     if (! file.existsAsFile())
         return;
 

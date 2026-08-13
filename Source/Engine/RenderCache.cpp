@@ -16,6 +16,7 @@ juce::File RenderCache::fileFor (const Pattern& p, double bpm, double sampleRate
     // The name carries the full identity: seed, settings, tempo, rate, bars.
     juce::String id;
     id << juce::String::toHexString ((juce::int64) p.seed) << '_'
+       << juce::String::toHexString ((juce::int64) p.ornamentSeed) << '_'
        << modeName (p.settings.mode) << '_'
        << familyName (p.settings.family) << '_'
        << p.settings.bars << "bars_"

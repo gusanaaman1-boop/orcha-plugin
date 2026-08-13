@@ -44,6 +44,7 @@ OrchaAudioProcessorEditor::OrchaAudioProcessorEditor (OrchaAudioProcessor& p)
         card->onFavorite = [this, i] { processor.toggleFavorite (i); };
         card->onRegenerate = [this, i] { processor.regenerateOption (i); };
         card->getDragFile = [this, i] { return processor.ensureWavFor (i); };
+        card->getMidiDragFile = [this, i] { return processor.ensureMidiFor (i); };
         addAndMakeVisible (*card);
         optionCards[(size_t) i] = std::move (card);
     }

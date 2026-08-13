@@ -81,10 +81,15 @@ struct RoleMap
     }
 };
 
-// A generated loop, fully determined by (seed, settings, swing/family data).
+// A generated loop, fully determined by (seed, ornamentSeed, settings).
+// Two seeds on purpose: `seed` decides the MOTIF (skeleton, lead role,
+// anchors - the loop's character) and `ornamentSeed` decides everything
+// decorative. Regenerating a card with a fresh ornamentSeed gives a fresh
+// take on the same groove instead of a different groove.
 struct Pattern
 {
-    juce::uint64 seed = 0;
+    juce::uint64 seed = 0;          // motif seed
+    juce::uint64 ornamentSeed = 0;
     GeneratorSettings settings;
     juce::String name;          // "DROP 01"
     double swing = 0.0;         // 0..1 of a 16th, applied to odd steps

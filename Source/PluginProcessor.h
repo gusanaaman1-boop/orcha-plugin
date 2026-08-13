@@ -41,19 +41,22 @@ public:
 
     const Option& option (int index) const        { return options[(size_t) index]; }
     void generateAll();                 // fresh seeds; favorites keep theirs
-    void regenerateOption (int index);  // new seed for one card
+    // Variation: keeps the card's motif seed (same groove) and re-rolls only
+    // the ornament seed. A card that was never generated gets both fresh.
+    void regenerateOption (int index);
     void toggleFavorite (int index)     { options[(size_t) index].favorite = ! options[(size_t) index].favorite; notifyModel(); }
     void togglePlay (int index);
     bool anySampleLoaded() const;
     bool isGenerating() const           { return pendingJobs.load() > 0; }
     // A build job is on its way to filling this slot.
-    bool optionBusy (int index) const   { return pendingSeeds[(size_t) index] != 0
+    bool optionBusy (int index) const   { return pendingSeeds[(size_t) index].motif != 0
                                               && ! options[(size_t) index].ready
                                               && isGenerating(); }
     int  playingOption() const          { return preview.playingOption(); }
 
-    // For drag-out: the option's WAV, written if the cache lost it.
+    // For drag-out: the option's WAV / MIDI, written if the cache lost them.
     juce::File ensureWavFor (int index);
+    juce::File ensureMidiFor (int index);
 
     std::function<void()> onModelChanged;   // editor hook, message thread
 
@@ -88,10 +91,12 @@ private:
     void enqueueBuild (std::vector<int> indices);
     void rerenderAtCurrentTempo();
 
+    struct SeedPair { juce::uint64 motif = 0, orn = 0; };
+
     std::vector<InputSample::Ptr> samples { numSlots, nullptr };
     RoleMap roleMap;
     std::array<Option, numOptions> options;
-    std::array<juce::uint64, numOptions> pendingSeeds {};
+    std::array<SeedPair, numOptions> pendingSeeds {};
 
     juce::ThreadPool pool { juce::ThreadPoolOptions{}.withNumberOfThreads (2)
                                                      .withThreadName ("ORCHA worker") };
