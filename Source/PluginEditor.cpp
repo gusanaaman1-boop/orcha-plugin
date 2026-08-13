@@ -1,5 +1,6 @@
 #include "PluginEditor.h"
 #include "Engine/SampleLoader.h"
+#include "Core/ProductInfo.h"
 #include "OrchaVersion.h"
 
 namespace orcha
@@ -130,10 +131,45 @@ void OrchaAudioProcessorEditor::paint (juce::Graphics& g)
     g.setFont (theme::label (12.0f));
     g.drawText ("DROP UP TO 3 SAMPLES", header, juce::Justification::centred);
 
-    g.setColour (theme::textDim);
-    g.setFont (theme::label (10.0f));
-    g.drawText (juce::String ("v") + ORCHA_VERSION_STRING + " " + ORCHA_GIT_DESCRIBE,
-                header, juce::Justification::centredRight);
+    // The NAAMAN mark - the site logo drawn vectorially: a circle holding an
+    // N of two uprights and one gold diagonal - with the maker's name. Small
+    // and constant, a signature rather than a splash.
+    {
+        const float logoSize = 26.0f;
+        auto logo = juce::Rectangle<float> ((float) header.getRight() - logoSize,
+                                            (float) header.getCentreY() - logoSize * 0.5f,
+                                            logoSize, logoSize);
+        auto pt = [&logo] (float u, float v)
+        {
+            return juce::Point<float> (logo.getX() + u / 40.0f * logo.getWidth(),
+                                       logo.getY() + v / 40.0f * logo.getHeight());
+        };
+        const juce::Colour gold (0xffc9a86a);
+        g.setColour (theme::text.withAlpha (0.28f));
+        g.drawEllipse (logo.reduced (1.0f), 1.0f);
+        g.setColour (theme::text);
+        g.drawLine ({ pt (13.2f, 12.6f), pt (13.2f, 27.4f) }, 1.2f);
+        g.drawLine ({ pt (26.8f, 12.6f), pt (26.8f, 27.4f) }, 1.2f);
+        g.setColour (gold);
+        g.drawLine ({ pt (13.2f, 12.6f), pt (26.8f, 27.4f) }, 1.2f);
+
+        auto textArea = header.withTrimmedRight ((int) logoSize + 8);
+        g.setColour (theme::text);
+        g.setFont (theme::heading (11.0f));
+        g.drawText (productInfo::maker, textArea.withTrimmedBottom (header.getHeight() / 2 - 2),
+                    juce::Justification::bottomRight);
+        // The git describe only earns its place when it says more than the
+        // version already does (dirty builds, commits past the tag).
+        juce::String versionLine = juce::String ("v") + ORCHA_VERSION_STRING;
+        if (! juce::String (ORCHA_GIT_DESCRIBE).startsWith (versionLine))
+            versionLine << "  " << ORCHA_GIT_DESCRIBE;
+        else if (juce::String (ORCHA_GIT_DESCRIBE) != versionLine)
+            versionLine = ORCHA_GIT_DESCRIBE;
+        g.setColour (theme::textDim);
+        g.setFont (theme::label (9.0f));
+        g.drawText (versionLine, textArea.withTrimmedTop (header.getHeight() / 2),
+                    juce::Justification::topRight);
+    }
 
     // LOOP OPTIONS divider between the strip and the grid.
     const int dividerY = strip.getBottom() + 4;

@@ -61,7 +61,7 @@ juce::Rectangle<float> PatternEditPanel::gridArea() const
 {
     auto b = getLocalBounds().toFloat().reduced (14.0f);
     b.removeFromTop (40.0f);            // header
-    b.removeFromLeft (46.0f);           // lane labels
+    b.removeFromLeft (96.0f);           // lane labels (sample names)
     b.removeFromBottom (22.0f);         // hint line
     return b;
 }
@@ -116,15 +116,30 @@ void PatternEditPanel::paint (juce::Graphics& g)
     const float cellW = grid.getWidth() / (float) steps;
     const float laneH = grid.getHeight() / 3.0f;
 
-    static const char* laneNames[] = { "HIGH", "MID", "LOW" };
+    // Each lane is labeled with the sample that actually plays it, not the
+    // abstract role - the user thinks in their samples.
     for (int lane = 0; lane < 3; ++lane)
     {
         const float y = grid.getY() + lane * laneH;
-        g.setColour (theme::textDim);
+        const auto labelArea = juce::Rectangle<float> (grid.getX() - 96.0f, y,
+                                                       88.0f, laneH);
+        const int slot = processor.slotForRole (laneRole (lane));
+        const auto sample = slot >= 0 ? processor.getSample (slot) : nullptr;
+
+        g.setColour (theme::text);
         g.setFont (theme::heading (11.0f));
-        g.drawText (laneNames[lane],
-                    juce::Rectangle<float> (grid.getX() - 46.0f, y, 40.0f, laneH),
-                    juce::Justification::centredLeft);
+        g.drawText (sample != nullptr ? "SAMPLE " + juce::String (slot + 1)
+                                      : juce::String (roleName (laneRole (lane))),
+                    labelArea.withHeight (laneH * 0.5f).withTrimmedTop (laneH * 0.5f - 22.0f),
+                    juce::Justification::bottomLeft);
+        if (sample != nullptr)
+        {
+            g.setColour (theme::textDim);
+            g.setFont (theme::label (9.5f));
+            g.drawText (sample->file.getFileNameWithoutExtension(),
+                        labelArea.withTrimmedTop (laneH * 0.5f).withHeight (14.0f),
+                        juce::Justification::topLeft);
+        }
         g.setColour (theme::outline.withAlpha (0.5f));
         g.drawHorizontalLine ((int) y, grid.getX(), grid.getRight());
     }

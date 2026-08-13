@@ -34,6 +34,8 @@ public:
     };
 
     InputSample::Ptr getSample (int slot) const   { return samples[(size_t) slot]; }
+    // Which loaded slot serves this role right now (-1 when nothing loaded).
+    int slotForRole (Role r) const                { return roleMap.slotFor (r); }
     void loadSampleAsync (int slot, const juce::File& file);
     void clearSample (int slot);
     void setUserRole (int slot, Role role);
