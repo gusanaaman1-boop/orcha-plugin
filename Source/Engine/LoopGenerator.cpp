@@ -3,6 +3,7 @@
 #include "PhrasePlanner.h"
 #include "FeelVector.h"
 #include "Motif.h"
+#include "SilencePlanner.h"
 #include <algorithm>
 
 namespace orcha
@@ -450,6 +451,9 @@ Pattern LoopGenerator::generateV2 (juce::uint64 motifSeed, juce::uint64 ornament
     const auto plan = PhrasePlanner::plan (settings.mode, bars, motifSeed);
     const auto feel = FeelVector::derive (settings, motifSeed);
     const auto traj = FeelTrajectory::derive (settings.mode, bars, feel);
+    // Silence is planned before decoration exists, and protected after.
+    const auto silence = SilencePlanner::plan (settings.mode, settings.family,
+                                               bars, plan, feel, motifSeed);
     auto segOf = [&] (double pos) { return plan.segmentOf (pos, steps); };
     auto segRole = [&] (int seg)
     {
@@ -620,6 +624,8 @@ Pattern LoopGenerator::generateV2 (juce::uint64 motifSeed, juce::uint64 ornament
                 continue;
             if (offbeatStackFull (e.pos))
                 continue;   // avoid collision: the next voice must wait
+            if (SilencePlanner::blocked (silence, e.pos, e.role == leadRole))
+                continue;   // planned air is untouchable
             p.events.push_back (e);
         }
     }
@@ -663,38 +669,14 @@ Pattern LoopGenerator::generateV2 (juce::uint64 motifSeed, juce::uint64 ornament
                 continue;
             if (offbeatStackFull (pos))
                 continue;
+            if (SilencePlanner::blocked (silence, pos, true))
+                continue;
             Event g;
             g.pos = pos;
             g.role = leadRole;
             g.velocity = 0.10f + 0.15f * rng.uni();
             g.gateSteps = 0.5;
             p.events.push_back (g);
-        }
-    }
-
-    // --- 4b. pocket holes: rhythm needs moments of nothing ---------------------
-    // A deliberate empty half-beat (or two, in long loops) carved into the
-    // decoration - part of the groove's identity (motif stream), so every
-    // take breathes in the same places. Anchors are never touched.
-    {
-        const int holes = juce::jmax (1, bars / 2);
-        for (int h = 0; h < holes; ++h)
-        {
-            if (! rngM.chance (0.3f + 0.4f * feel.space))
-                continue;
-            const double holeStart = 2.0 + 4.0 * rngM.pick (bars * 4 - 1);
-            // The question and the answer own their shapes - holes land in
-            // the plain segments, never inside a Call or Response cell.
-            const auto holeRole = segRole (segOf (holeStart));
-            if (holeRole == PhraseRole::Call || holeRole == PhraseRole::Response)
-                continue;
-            p.events.erase (std::remove_if (p.events.begin(), p.events.end(),
-                [holeStart] (const Event& e)
-                {
-                    return ! e.protectedAnchor && ! e.roll
-                        && e.pos >= holeStart && e.pos < holeStart + 2.0;
-                }),
-                p.events.end());
         }
     }
 
@@ -952,6 +934,17 @@ Pattern LoopGenerator::generateV2 (juce::uint64 motifSeed, juce::uint64 ornament
             kept.push_back (e);
         }
         p.events = std::move (kept);
+
+        // Planned silence survives every later stage: whatever randomness,
+        // graces or call/response shifted into a protected region is removed.
+        p.events.erase (std::remove_if (p.events.begin(), p.events.end(),
+            [&] (const Event& e)
+            {
+                return ! e.protectedAnchor && ! e.roll
+                    && SilencePlanner::blocked (silence, e.pos,
+                                                e.role == leadRole);
+            }),
+            p.events.end());
 
         // The ka rule holds to the END: after every shift and hole, a ghost
         // in a neighbor-grammar style must still hug a real (non-ghost) hit.

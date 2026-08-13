@@ -13,6 +13,7 @@
 #include "../Engine/PhrasePlanner.h"
 #include "../Engine/FeelVector.h"
 #include "../Engine/Motif.h"
+#include "../Engine/SilencePlanner.h"
 #include "../Playback/PreviewPlayer.h"
 
 using namespace orcha;
@@ -1357,6 +1358,60 @@ int main()
         check (RhythmStyle::get (Family::ARABIC).ghostsNeedNeighbor
                && ! RhythmStyle::get (Family::EDM).ghostsNeedNeighbor,
                "ka adjacency is an arabic rule, not a global one");
+    }
+
+    // === ENGINE 2 / PHASE 4: SilencePlanner + tension model ========================
+    {
+        // Planned silence survives MAXIMUM density and ornamentation.
+        for (auto family : { Family::CINEMATIC, Family::EDM })
+            for (int i = 0; i < 16; ++i)
+            {
+                GeneratorSettings s;
+                s.family = family;
+                s.mode = family == Family::CINEMATIC ? Mode::BREAK : Mode::GROOVE;
+                s.density = 1.0f;
+                s.randomness = 0.8f;
+                s.bars = 2;
+                const auto motif = LoopGenerator::deriveSeed (41001, i);
+                const auto p = PatternValidator::validate (LoopGenerator::generateV2 (
+                    motif, LoopGenerator::deriveSeed (41002, i), s));
+                const auto regions = SilencePlanner::plan (
+                    s.mode, s.family, s.bars,
+                    PhrasePlanner::plan (s.mode, s.bars, motif),
+                    FeelVector::derive (s, motif), motif);
+                for (const auto& reg : regions)
+                {
+                    if (! reg.allRoles)
+                        continue;   // lead-only regions need the lead role
+                    for (const auto& e : p.events)
+                        if (! e.protectedAnchor && ! e.roll)
+                            check (! reg.contains (e.pos),
+                                   "planned silence cannot be refilled");
+                }
+            }
+
+        // The four sections carry visibly different tension shapes.
+        auto meanTension = [] (Mode mode, int segIndex)
+        {
+            GeneratorSettings s;
+            s.mode = mode;
+            s.bars = 4;
+            double sum = 0.0;
+            for (int i = 0; i < 24; ++i)
+            {
+                const auto p = PatternValidator::validate (LoopGenerator::generateV2 (
+                    LoopGenerator::deriveSeed (42001, i),
+                    LoopGenerator::deriveSeed (42002, i), s));
+                sum += TensionModel::measure (p)[(size_t) segIndex];
+            }
+            return sum / 24.0;
+        };
+        check (meanTension (Mode::BUILD, 2) > meanTension (Mode::BUILD, 0) * 1.1,
+               "BUILD tension rises toward the destination");
+        check (meanTension (Mode::BREAK, 3) < meanTension (Mode::BREAK, 1),
+               "BREAK ends with less tension than its call");
+        check (meanTension (Mode::BREAK, 1) < meanTension (Mode::DROP, 1),
+               "BREAK carries less tension than DROP overall");
     }
 
     std::cout << (failures == 0 ? "ALL OK" : "FAILED") << " - "
