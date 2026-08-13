@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<installer-gui-script minSpecVersion="1">
+    <title>ORCHA by Gussa Naaman — Rhythm Loop Generator</title>
+    <welcome language="en" mime-type="text/plain">ORCHA installs as a VST3 instrument (Cubase, Ableton Live, FL Studio...), an Audio Unit (Logic, GarageBand) and a standalone app. Universal binary — Apple Silicon and Intel Macs. After installing, rescan plugins in your DAW; ORCHA appears under Naaman as an INSTRUMENT — add it on an instrument track. Drop up to 3 samples, pick a style, GENERATE LOOPS, and drag any card into your project as audio or MIDI.</welcome>
+    <options customize="allow" require-scripts="false" hostArchitectures="arm64,x86_64"/>
+    <choices-outline>
+        <line choice="vst3"/>
+        <line choice="au"/>
+        <line choice="app"/>
+    </choices-outline>
+    <choice id="vst3" title="VST3 plugin" description="For Cubase, Ableton Live, FL Studio, Studio One and other VST3 hosts.">
+        <pkg-ref id="com.naaman.orcha.vst3"/>
+    </choice>
+    <choice id="au" title="Audio Unit (AU)" description="For Logic Pro, GarageBand and Ableton Live on macOS.">
+        <pkg-ref id="com.naaman.orcha.au"/>
+    </choice>
+    <choice id="app" title="Standalone app" description="Runs on its own, without a DAW. Installs into Applications.">
+        <pkg-ref id="com.naaman.orcha.app"/>
+    </choice>
+    <pkg-ref id="com.naaman.orcha.vst3" version="@VERSION@">#Orcha-VST3.pkg</pkg-ref>
+    <pkg-ref id="com.naaman.orcha.au" version="@VERSION@">#Orcha-AU.pkg</pkg-ref>
+    <pkg-ref id="com.naaman.orcha.app" version="@VERSION@">#Orcha-App.pkg</pkg-ref>
+</installer-gui-script>
