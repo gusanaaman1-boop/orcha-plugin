@@ -81,6 +81,19 @@ struct GeneratorSettings
     int    bars = 1;           // 1, 2 or 4
 };
 
+// What the generator needs to know about the sample serving a role, so the
+// SYMBOLIC stage can respect the audio before anything renders: sustained
+// samples need spacing, low-heavy ones must not pile up, weak transients
+// cannot carry rolls.
+struct RoleTraits
+{
+    bool sustained = false;      // rings long: needs spacing + gates
+    bool lowHeavy = false;       // sub-heavy: no dense stacking
+    bool brightShort = false;    // supports fast ornamentation
+    bool weakTransient = false;  // better as swells than as rolls
+};
+using TraitsByRole = std::array<RoleTraits, 5>;   // indexed by (int) Role
+
 // Which loaded sample slot serves each role. -1 = role unused. Slots may
 // repeat when fewer samples are loaded than roles.
 struct RoleMap

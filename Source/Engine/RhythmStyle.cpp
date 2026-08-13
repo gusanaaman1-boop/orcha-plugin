@@ -100,6 +100,8 @@ static StyleInfo makePsytrance()
     s.accentMap = { 1.00f, 0.82f, 0.85f, 0.82f, 0.96f, 0.82f, 0.85f, 0.82f,
                     1.00f, 0.82f, 0.85f, 0.82f, 0.96f, 0.82f, 0.86f, 0.88f };
     s.ghostiness = 0.3f;
+    s.syncopationTargetLo = 0.15f;
+    s.syncopationTargetHi = 0.35f;
     s.skeletons = {
         // Full-on: bass fills all three 16ths between every kick.
         { "fullon_roll", {
@@ -175,6 +177,11 @@ static StyleInfo makeArabic()
                     1.00f, 0.74f, 0.86f, 0.80f, 0.95f, 0.75f, 0.90f, 0.85f };
     s.highFeelMs = 2.0f;
     s.ghostiness = 0.55f;
+    // A "ka" is grammatically attached to a DUM or TAK - it never floats
+    // alone in space.
+    s.ghostsNeedNeighbor = true;
+    s.syncopationTargetLo = 0.3f;
+    s.syncopationTargetHi = 0.55f;
     s.skeletons = {
         // Maqsum: D T - T | D - T -
         { "maqsum", {
@@ -227,6 +234,9 @@ static StyleInfo makeMediterranean()
                     1.00f, 0.74f, 0.88f, 0.80f, 0.95f, 0.75f, 0.90f, 0.90f };
     s.highFeelMs = 2.0f;
     s.ghostiness = 0.55f;
+    s.ghostsNeedNeighbor = true;
+    s.syncopationTargetLo = 0.3f;
+    s.syncopationTargetHi = 0.6f;
     s.skeletons = {
         // Maqsum frame over a dance-floor pulse; answers live in the back half.
         { "med_maqsum_drive", {
@@ -266,6 +276,8 @@ static StyleInfo makeAfro()
                     0.90f, 0.75f, 0.95f, 0.78f, 0.92f, 0.80f, 0.85f, 0.88f };
     s.midFeelMs = -2.0f;
     s.ghostiness = 0.55f;
+    s.syncopationTargetLo = 0.5f;
+    s.syncopationTargetHi = 0.8f;
     s.skeletons = {
         // Son-clave-derived key pattern with interlocking low tumbao.
         { "clave_32", {

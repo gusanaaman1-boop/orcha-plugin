@@ -39,6 +39,14 @@ struct StyleInfo
     float highFeelMs = 0.0f;
     float midFeelMs = 0.0f;
     float ghostiness = 0.5f;
+
+    // StyleDNA (grows across the Engine 2.0 phases). Role-interaction rules
+    // the generator enforces at placement time, plus targets the Phase 5
+    // scorer will read.
+    bool ghostsNeedNeighbor = false;   // ARABIC/MED: a "ka" hugs a real hit
+    int maxOffbeatStack = 2;           // distinct roles allowed off the beat
+    float syncopationTargetLo = 0.25f; // desired off-beat weight range
+    float syncopationTargetHi = 0.6f;
 };
 
 namespace RhythmStyle

@@ -11,6 +11,28 @@
 namespace orcha
 {
 
+// What each role's sample can carry, for the symbolic stage (Phase 3:
+// sample-aware role use). Derived from the existing analysis, deterministic.
+static TraitsByRole deriveTraits (const std::vector<InputSample::Ptr>& samples,
+                                  const RoleMap& map)
+{
+    TraitsByRole traits {};
+    for (Role role : { Role::LOW, Role::MID, Role::HIGH, Role::FX })
+    {
+        const int slot = map.slotFor (role);
+        if (slot < 0 || slot >= (int) samples.size()
+            || samples[(size_t) slot] == nullptr)
+            continue;
+        const auto& a = samples[(size_t) slot]->analysis;
+        auto& t = traits[(size_t) role];
+        t.sustained = ! a.isOneShot || a.durationSeconds > 0.6;
+        t.lowHeavy = a.lowEnergyRatio > 0.4f;
+        t.brightShort = a.spectralCentroidHz > 2500.0f && a.durationSeconds < 0.4;
+        t.weakTransient = a.transientStrength < 0.3f;
+    }
+    return traits;
+}
+
 OrchaAudioProcessor::OrchaAudioProcessor()
     : juce::AudioProcessor (BusesProperties()
           .withOutput ("Output", juce::AudioChannelSet::stereo(), true))
@@ -267,12 +289,13 @@ void OrchaAudioProcessor::enqueueBuild (std::vector<int> indices,
     lastRenderSr = ctx.sampleRate;
 
     const auto settingsCopy = settings;
+    const auto traits = deriveTraits (samples, roleMap);
     const int gen = generation.load();
     juce::WeakReference<OrchaAudioProcessor> self (this);
     pendingJobs.fetch_add (1);
     notifyModel();
 
-    pool.addJob ([self, inputs, existingSigs, ctx, settingsCopy, gen, this]() mutable
+    pool.addJob ([self, inputs, existingSigs, ctx, settingsCopy, traits, gen, this]() mutable
     {
         // `this` is only touched through atomics here; object lifetime is
         // guarded by removeAllJobs in the destructor.
@@ -294,16 +317,16 @@ void OrchaAudioProcessor::enqueueBuild (std::vector<int> indices,
                 // already on screen - "12 clearly different results" is a
                 // promise. Only the ornament seed re-rolls, so a variation
                 // request never loses its motif to the diversity check.
-                auto gen = [&] (juce::uint64 m, juce::uint64 o)
+                auto makePattern = [&] (juce::uint64 m, juce::uint64 o)
                 {
                     return in.seeds.algo >= 2
-                        ? LoopGenerator::generateV2 (m, o, settingsCopy)
+                        ? LoopGenerator::generateV2 (m, o, settingsCopy, traits)
                         : LoopGenerator::generate (m, o, settingsCopy);
                 };
                 juce::uint64 orn = in.seeds.orn;
                 for (int attempt = 0; attempt < 8; ++attempt)
                 {
-                    pattern = PatternValidator::validate (gen (in.seeds.motif, orn));
+                    pattern = PatternValidator::validate (makePattern (in.seeds.motif, orn));
                     if (! existingSigs.contains (pattern.signature()))
                         break;
                     orn = LoopGenerator::deriveSeed (orn, 7777 + attempt);
@@ -317,7 +340,7 @@ void OrchaAudioProcessor::enqueueBuild (std::vector<int> indices,
                      ++attempt)
                 {
                     motif = LoopGenerator::deriveSeed (motif, 31337 + attempt);
-                    pattern = PatternValidator::validate (gen (motif, orn));
+                    pattern = PatternValidator::validate (makePattern (motif, orn));
                 }
                 existingSigs.add (pattern.signature());
             }

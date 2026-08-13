@@ -425,6 +425,13 @@ Pattern LoopGenerator::generate (juce::uint64 motifSeed, juce::uint64 ornamentSe
 Pattern LoopGenerator::generateV2 (juce::uint64 motifSeed, juce::uint64 ornamentSeed,
                                    const GeneratorSettings& settings)
 {
+    return generateV2 (motifSeed, ornamentSeed, settings, TraitsByRole {});
+}
+
+Pattern LoopGenerator::generateV2 (juce::uint64 motifSeed, juce::uint64 ornamentSeed,
+                                   const GeneratorSettings& settings,
+                                   const TraitsByRole& traits)
+{
     Pattern p;
     p.seed = motifSeed;
     p.ornamentSeed = ornamentSeed;
@@ -448,6 +455,33 @@ Pattern LoopGenerator::generateV2 (juce::uint64 motifSeed, juce::uint64 ornament
     {
         return plan.roles[(size_t) juce::jlimit (0, plan.segments() - 1, seg)];
     };
+    // Role interaction: how many distinct voices may share an OFF-beat slot
+    // (beats can stack freely - that is reinforcement), and whether a ghost
+    // needs a neighbor to hold on to (the arabic "ka" grammar).
+    auto rolesAt = [&] (double pos)
+    {
+        int mask = 0;
+        for (const auto& e : p.events)
+            if (std::abs (e.pos - pos) < 0.26)
+                mask |= 1 << (int) e.role;
+        int n = 0;
+        for (int b = 0; b < 5; ++b)
+            n += (mask >> b) & 1;
+        return n;
+    };
+    auto offbeatStackFull = [&] (double pos)
+    {
+        const bool onBeat = std::fmod (pos, 4.0) < 0.01;
+        return ! onBeat && rolesAt (pos) >= style.maxOffbeatStack;
+    };
+    auto hasNeighbor = [&] (double pos)
+    {
+        for (const auto& e : p.events)
+            if (std::abs (e.pos - pos) <= 1.01 && std::abs (e.pos - pos) > 0.01)
+                return true;
+        return false;
+    };
+
     // How much decoration a segment's function invites, on top of the
     // density trajectory: the Accelerate bar earns its extra weight here.
     auto roleBudget = [] (PhraseRole role)
@@ -584,6 +618,8 @@ Pattern LoopGenerator::generateV2 (juce::uint64 motifSeed, juce::uint64 ornament
                 continue;
             if (hasEventAt (p.events, e.pos, e.role))
                 continue;
+            if (offbeatStackFull (e.pos))
+                continue;   // avoid collision: the next voice must wait
             p.events.push_back (e);
         }
     }
@@ -618,6 +654,14 @@ Pattern LoopGenerator::generateV2 (juce::uint64 motifSeed, juce::uint64 ornament
                 * traj.at (traj.density, seg) * roleBudget (role)
                 * (1.0f - 0.5f * feel.space);
             if (stepOccupied (p.events, pos) || ! rng.chance (ghostP))
+                continue;
+            // The arabic/mediterranean "ka" hugs a real hit; a pad-like
+            // sample (no attack) cannot articulate a tick at all.
+            if (style.ghostsNeedNeighbor && ! hasNeighbor (pos))
+                continue;
+            if (traits[(size_t) leadRole].weakTransient)
+                continue;
+            if (offbeatStackFull (pos))
                 continue;
             Event g;
             g.pos = pos;
@@ -667,7 +711,7 @@ Pattern LoopGenerator::generateV2 (juce::uint64 motifSeed, juce::uint64 ornament
         if (rng.chance (r * 0.15f))
             e.pitchSemis = rng.chance (0.5f) ? 2 : -2;
     }
-    if (r > 0.15f)
+    if (r > 0.15f && ! traits[(size_t) Role::HIGH].weakTransient)
     {
         std::vector<Event> graces;
         for (const auto& e : p.events)
@@ -755,7 +799,12 @@ Pattern LoopGenerator::generateV2 (juce::uint64 motifSeed, juce::uint64 ornament
 
     if (! planVacuum && rng.chance (fillP))
     {
-        const Role rollRole = rng.chance (0.4f) ? Role::MID : Role::HIGH;
+        // A weak-transient sample cannot articulate a roll: the roll goes to
+        // the other voice (and if both are weak, the fill is skipped by the
+        // spacing pass below - swells serve those samples instead).
+        Role rollRole = rng.chance (0.4f) ? Role::MID : Role::HIGH;
+        if (traits[(size_t) rollRole].weakTransient)
+            rollRole = rollRole == Role::MID ? Role::HIGH : Role::MID;
         const int rollSteps = 2 + rng.pick (settings.mode == Mode::BUILD ? 3 : 2);
         const double rollStart = steps - rollSteps;
         p.events.erase (std::remove_if (p.events.begin(), p.events.end(),
@@ -859,7 +908,9 @@ Pattern LoopGenerator::generateV2 (juce::uint64 motifSeed, juce::uint64 ornament
     if (bars == 4 && segRole (1) != PhraseRole::Breath
         && rng.chance (0.25f + profile.fillChance * 0.4f))
     {
-        const Role halfRole = rng.chance (0.5f) ? Role::MID : Role::HIGH;
+        Role halfRole = rng.chance (0.5f) ? Role::MID : Role::HIGH;
+        if (traits[(size_t) halfRole].weakTransient)
+            halfRole = halfRole == Role::MID ? Role::HIGH : Role::MID;
         for (double pos = 30.5; pos < 31.9; pos += 0.5)
         {
             Event e;
@@ -874,6 +925,53 @@ Pattern LoopGenerator::generateV2 (juce::uint64 motifSeed, juce::uint64 ornament
 
     std::sort (p.events.begin(), p.events.end(),
                [] (const Event& a, const Event& b) { return a.pos < b.pos; });
+
+    // --- 10. sample-aware spacing pass -----------------------------------------
+    // The symbolic result must already respect what the audio can carry:
+    //  - a sustained sample gets gated everywhere and never re-fires inside
+    //    a single step (the render-side choke handles the rest)
+    //  - a low-heavy sample never doubles up inside a single step
+    //  - weak-transient roles lose their rolls (they smear, not snap)
+    {
+        std::array<double, 5> lastPos { -99.0, -99.0, -99.0, -99.0, -99.0 };
+        std::vector<Event> kept;
+        kept.reserve (p.events.size());
+        for (auto e : p.events)
+        {
+            const auto& t = traits[(size_t) e.role];
+            const double minGap = t.sustained || t.lowHeavy ? 1.0 : 0.0;
+            const bool tooClose = minGap > 0.0 && ! e.protectedAnchor && ! e.roll
+                && e.pos - lastPos[(size_t) e.role] < minGap - 1.0e-9;
+            if (tooClose)
+                continue;
+            if (t.weakTransient && e.roll)
+                continue;
+            if (t.sustained && e.gateSteps <= 0.0)
+                e.gateSteps = 2.0;
+            lastPos[(size_t) e.role] = e.pos;
+            kept.push_back (e);
+        }
+        p.events = std::move (kept);
+
+        // The ka rule holds to the END: after every shift and hole, a ghost
+        // in a neighbor-grammar style must still hug a real (non-ghost) hit.
+        if (style.ghostsNeedNeighbor)
+        {
+            auto isGhost = [] (const Event& e)
+            { return e.velocity <= 0.28f && e.gateSteps == 0.5 && ! e.roll; };
+            p.events.erase (std::remove_if (p.events.begin(), p.events.end(),
+                [&] (const Event& g)
+                {
+                    if (! isGhost (g))
+                        return false;
+                    for (const auto& o : p.events)
+                        if (! isGhost (o) && std::abs (o.pos - g.pos) <= 1.01)
+                            return false;
+                    return true;
+                }),
+                p.events.end());
+        }
+    }
     return p;
 }
 

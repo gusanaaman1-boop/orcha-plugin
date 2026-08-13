@@ -24,7 +24,13 @@ namespace LoopGenerator
                       const GeneratorSettings& settings);
 
     // ENGINE 2 - phrase-planned generation (FeelVector + PhrasePlanner).
-    // Same determinism contract; used for all NEW generations.
+    // Same determinism contract; used for all NEW generations. The traits
+    // tell the SYMBOLIC stage what the samples can carry (sustained needs
+    // spacing, weak transients cannot roll) - same traits + same seeds =
+    // same pattern.
+    Pattern generateV2 (juce::uint64 motifSeed, juce::uint64 ornamentSeed,
+                        const GeneratorSettings& settings,
+                        const TraitsByRole& traits);
     Pattern generateV2 (juce::uint64 motifSeed, juce::uint64 ornamentSeed,
                         const GeneratorSettings& settings);
 

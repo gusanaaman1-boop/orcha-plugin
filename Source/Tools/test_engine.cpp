@@ -1238,6 +1238,127 @@ int main()
         }
     }
 
+    // === ENGINE 2 / PHASE 3: StyleDNA + RoleInteraction + sample awareness =========
+    {
+        // --- role interaction: no off-beat pile-ups ----------------------------
+        for (auto family : { Family::EDM, Family::AFRO, Family::URBAN })
+            for (int i = 0; i < 16; ++i)
+            {
+                GeneratorSettings s;
+                s.family = family;
+                s.density = 0.9f;
+                s.bars = 2;
+                const auto p = PatternValidator::validate (LoopGenerator::generateV2 (
+                    LoopGenerator::deriveSeed (31001, i),
+                    LoopGenerator::deriveSeed (31002, i), s));
+                for (const auto& e : p.events)
+                {
+                    if (std::fmod (e.pos, 4.0) < 0.01 || e.roll
+                        || std::abs (e.pos - std::round (e.pos)) > 0.01)
+                        continue;
+                    int rolesHere = 0;
+                    for (int rr = 0; rr < 5; ++rr)
+                    {
+                        for (const auto& o : p.events)
+                            if ((int) o.role == rr && std::abs (o.pos - e.pos) < 0.26)
+                            {
+                                ++rolesHere;
+                                break;
+                            }
+                    }
+                    check (rolesHere <= RhythmStyle::get (family).maxOffbeatStack,
+                           "off-beat slots never stack more voices than the style allows");
+                }
+            }
+
+        // --- arabic ghosts hug a real hit --------------------------------------
+        {
+            GeneratorSettings s;
+            s.family = Family::ARABIC;
+            s.mode = Mode::GROOVE;
+            s.density = 0.8f;
+            for (int i = 0; i < 16; ++i)
+            {
+                const auto p = PatternValidator::validate (LoopGenerator::generateV2 (
+                    LoopGenerator::deriveSeed (32001, i),
+                    LoopGenerator::deriveSeed (32002, i), s));
+                for (const auto& g : p.events)
+                {
+                    if (! (g.velocity <= 0.28f && g.gateSteps == 0.5 && ! g.roll))
+                        continue;
+                    bool neighbored = false;
+                    for (const auto& o : p.events)
+                        if (&o != &g && std::abs (o.pos - g.pos) <= 1.01)
+                            neighbored = true;
+                    check (neighbored, "an arabic ka never floats alone");
+                }
+            }
+        }
+
+        // --- sample-aware symbolic generation ----------------------------------
+        {
+            TraitsByRole sustainedHigh {};
+            sustainedHigh[(size_t) Role::HIGH].sustained = true;
+            GeneratorSettings s;
+            s.density = 0.9f;
+            s.bars = 2;
+            for (int i = 0; i < 16; ++i)
+            {
+                const auto p = PatternValidator::validate (LoopGenerator::generateV2 (
+                    LoopGenerator::deriveSeed (33001, i),
+                    LoopGenerator::deriveSeed (33002, i), s, sustainedHigh));
+                double last = -99.0;
+                for (const auto& e : p.events)
+                {
+                    if (e.role != Role::HIGH)
+                        continue;
+                    check (e.gateSteps > 0.0, "a sustained sample is always gated");
+                    if (! e.protectedAnchor && ! e.roll)
+                    {
+                        check (e.pos - last >= 1.0 - 1.0e-9,
+                               "a sustained sample never re-fires inside a step");
+                        last = e.pos;
+                    }
+                }
+            }
+
+            TraitsByRole weakMid {};
+            weakMid[(size_t) Role::MID].weakTransient = true;
+            s.mode = Mode::BUILD;
+            s.energy = 0.9f;
+            for (int i = 0; i < 24; ++i)
+            {
+                const auto p = PatternValidator::validate (LoopGenerator::generateV2 (
+                    LoopGenerator::deriveSeed (34001, i),
+                    LoopGenerator::deriveSeed (34002, i), s, weakMid));
+                for (const auto& e : p.events)
+                    check (! (e.roll && e.role == Role::MID),
+                           "a weak-transient sample never carries a roll");
+            }
+
+            // Determinism with traits, and traits change the outcome.
+            s.mode = Mode::GROOVE;
+            const auto a = PatternValidator::validate (LoopGenerator::generateV2 (
+                77, 88, s, sustainedHigh));
+            const auto b = PatternValidator::validate (LoopGenerator::generateV2 (
+                77, 88, s, sustainedHigh));
+            const auto c = PatternValidator::validate (LoopGenerator::generateV2 (
+                77, 88, s, TraitsByRole {}));
+            check (a.signature() == b.signature(),
+                   "traits-aware generation is deterministic");
+            check (a.events.size() <= c.events.size(),
+                   "sustained traits never ADD events");
+        }
+
+        // --- StyleDNA carries scorer targets -----------------------------------
+        check (RhythmStyle::get (Family::PSYTRANCE).syncopationTargetLo
+                   <= RhythmStyle::get (Family::AFRO).syncopationTargetLo,
+               "afro aims higher syncopation than psytrance");
+        check (RhythmStyle::get (Family::ARABIC).ghostsNeedNeighbor
+               && ! RhythmStyle::get (Family::EDM).ghostsNeedNeighbor,
+               "ka adjacency is an arabic rule, not a global one");
+    }
+
     std::cout << (failures == 0 ? "ALL OK" : "FAILED") << " - "
               << checks << " checks, " << failures << " failures\n";
     return failures == 0 ? 0 : 1;
