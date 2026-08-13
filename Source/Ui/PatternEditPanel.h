@@ -50,6 +50,7 @@ private:
     int index = -1;
     Pattern working;                 // the pattern being edited (local copy)
     juce::TextButton resetButton { "RESET" }, closeButton { "CLOSE" };
+    juce::TextButton reverbButton { "REVERB" }, delayButton { "DELAY" };
 
     CellRef pressed;
     bool draggedVelocity = false;

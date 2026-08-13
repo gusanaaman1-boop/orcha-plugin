@@ -43,7 +43,9 @@ void OrchaAudioProcessor::loadSampleAsync (int slot, const juce::File& file)
                 return;
             if (loaded != nullptr)
             {
-                self->samples[(size_t) slot] = loaded;
+                self->rawSamples[(size_t) slot] = loaded;
+                self->samples[(size_t) slot] =
+                    SampleTransform::apply (*loaded, self->transforms[(size_t) slot]);
                 self->rolesChanged();
             }
             self->notifyModel();       // even on failure, so the UI un-busies
@@ -56,7 +58,23 @@ void OrchaAudioProcessor::clearSample (int slot)
     if (slot < 0 || slot >= numSlots)
         return;
     samples[(size_t) slot] = nullptr;
+    rawSamples[(size_t) slot] = nullptr;
+    transforms[(size_t) slot] = {};
     rolesChanged();
+    notifyModel();
+}
+
+void OrchaAudioProcessor::setTransform (int slot, SampleTransform::Settings t)
+{
+    if (slot < 0 || slot >= numSlots)
+        return;
+    transforms[(size_t) slot] = t;
+    if (rawSamples[(size_t) slot] != nullptr)
+    {
+        // Cheap enough to do synchronously - a copy, a crop, an analysis.
+        samples[(size_t) slot] = SampleTransform::apply (*rawSamples[(size_t) slot], t);
+        rolesChanged();
+    }
     notifyModel();
 }
 
@@ -172,8 +190,23 @@ void OrchaAudioProcessor::resetOptionEdits (int index)
     enqueueBuild ({ index });
 }
 
+void OrchaAudioProcessor::setOptionFx (int index, bool reverb, bool delay)
+{
+    if (index < 0 || index >= numOptions)
+        return;
+    auto& opt = options[(size_t) index];
+    opt.fxReverb = reverb;
+    opt.fxDelay = delay;
+    if (! opt.present)
+        return;
+    // Same pattern, new polish: render as-is, no regeneration.
+    opt.ready = false;
+    enqueueBuild ({ index }, {}, true);
+}
+
 void OrchaAudioProcessor::enqueueBuild (std::vector<int> indices,
-                                        juce::StringArray extraSigs)
+                                        juce::StringArray extraSigs,
+                                        bool forceExisting)
 {
     if (indices.empty())
         return;
@@ -187,6 +220,7 @@ void OrchaAudioProcessor::enqueueBuild (std::vector<int> indices,
         juce::String name;
         bool useExisting = false;   // edited pattern: render as-is, no generate
         Pattern existing;
+        bool fxReverb = false, fxDelay = false;   // card-level, survives regen
     };
     std::vector<BuildInput> inputs;
     for (int i : indices)
@@ -195,12 +229,15 @@ void OrchaAudioProcessor::enqueueBuild (std::vector<int> indices,
         name << modeName (settings.mode) << ' '
              << juce::String (i + 1).paddedLeft ('0', 2);
         BuildInput in { i, pendingSeeds[(size_t) i], name, false, {} };
-        if (options[(size_t) i].edited)
+        if (options[(size_t) i].edited
+            || (forceExisting && options[(size_t) i].present))
         {
             in.useExisting = true;
             in.existing = options[(size_t) i].pattern;
             in.name = in.existing.name.isNotEmpty() ? in.existing.name : name;
         }
+        in.fxReverb = options[(size_t) i].fxReverb;
+        in.fxDelay = options[(size_t) i].fxDelay;
         inputs.push_back (std::move (in));
     }
 
@@ -263,9 +300,23 @@ void OrchaAudioProcessor::enqueueBuild (std::vector<int> indices,
                         break;
                     orn = LoopGenerator::deriveSeed (orn, 7777 + attempt);
                 }
+                // A motif so simple that no ornament seed can change it (the
+                // "frozen card" report): as a last resort the motif itself
+                // re-rolls, which always lands somewhere new.
+                juce::uint64 motif = in.seeds.motif;
+                for (int attempt = 0;
+                     existingSigs.contains (pattern.signature()) && attempt < 8;
+                     ++attempt)
+                {
+                    motif = LoopGenerator::deriveSeed (motif, 31337 + attempt);
+                    pattern = PatternValidator::validate (
+                        LoopGenerator::generate (motif, orn, settingsCopy));
+                }
                 existingSigs.add (pattern.signature());
             }
             pattern.name = in.name;
+            pattern.fxReverb = in.fxReverb;
+            pattern.fxDelay = in.fxDelay;
 
             auto loop = PreviewPlayer::Loop::Ptr (new PreviewPlayer::Loop());
             loop->buffer = LoopRenderer::render (pattern, ctx);
@@ -444,6 +495,8 @@ void OrchaAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
             v.setProperty ("slot", i, nullptr);
             v.setProperty ("path", s->file.getFullPathName(), nullptr);
             v.setProperty ("role", roleName (s->userRole), nullptr);
+            v.setProperty ("rev", transforms[(size_t) i].reverse, nullptr);
+            v.setProperty ("trim", transforms[(size_t) i].trimTail, nullptr);
             ss.appendChild (v, nullptr);
         }
     root.appendChild (ss, nullptr);
@@ -465,6 +518,8 @@ void OrchaAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
                                            : juce::String (modeName (settings.mode)) + " "
                                              + juce::String (i + 1).paddedLeft ('0', 2), nullptr);
         v.setProperty ("favorite", opt.favorite, nullptr);
+        v.setProperty ("rvb", opt.fxReverb, nullptr);
+        v.setProperty ("dly", opt.fxDelay, nullptr);
 
         // A user-edited pattern cannot be rebuilt from seeds - store it whole.
         if (opt.edited)
@@ -540,6 +595,8 @@ void OrchaAudioProcessor::setStateInformation (const void* data, int sizeInBytes
                 : LoopGenerator::deriveSeed (motif, 4242);
             pendingSeeds[(size_t) i] = { motif, orn };
             options[(size_t) i].favorite = v.getProperty ("favorite", false);
+            options[(size_t) i].fxReverb = v.getProperty ("rvb", false);
+            options[(size_t) i].fxDelay = v.getProperty ("dly", false);
 
             if ((bool) v.getProperty ("edited", false))
             {
@@ -576,13 +633,20 @@ void OrchaAudioProcessor::setStateInformation (const void* data, int sizeInBytes
 
     for (auto& s : samples)
         s = nullptr;
+    for (auto& s : rawSamples)
+        s = nullptr;
+    transforms.fill ({});
     if (auto ss = root.getChildWithName ("samples"); ss.isValid())
         for (const auto& v : ss)
         {
             const int slot = v.getProperty ("slot", -1);
             const juce::File file ((juce::String) v.getProperty ("path", ""));
             if (slot >= 0 && slot < numSlots && file.existsAsFile())
-                loadSampleAsync (slot, file);   // completion triggers the rebuild
+            {
+                transforms[(size_t) slot].reverse = v.getProperty ("rev", false);
+                transforms[(size_t) slot].trimTail = v.getProperty ("trim", false);
+                loadSampleAsync (slot, file);   // completion applies the transform
+            }
         }
 
     notifyModel();

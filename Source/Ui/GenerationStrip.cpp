@@ -6,15 +6,15 @@ namespace orcha
 GenerationStrip::GenerationStrip()
 {
     wireToggleGroup ({ &dropButton, &breakButton, &buildButton, &grooveButton }, 101);
-    wireToggleGroup ({ &edmChip, &melodicChip, &psyChip, &arabicChip,
-                       &medChip, &afroChip, &cinematicChip, &hybridChip }, 102);
+    wireToggleGroup ({ &edmChip, &melodicChip, &psyChip, &urbanChip, &breaksChip,
+                       &arabicChip, &medChip, &afroChip, &cinematicChip, &hybridChip }, 102);
     wireToggleGroup ({ &bars1, &bars2, &bars4 }, 103);
     dropButton.setToggleState (true, juce::dontSendNotification);
     edmChip.setToggleState (true, juce::dontSendNotification);
     bars1.setToggleState (true, juce::dontSendNotification);
 
-    for (auto* chip : { &edmChip, &melodicChip, &psyChip, &arabicChip,
-                        &medChip, &afroChip, &cinematicChip, &hybridChip })
+    for (auto* chip : { &edmChip, &melodicChip, &psyChip, &urbanChip, &breaksChip,
+                        &arabicChip, &medChip, &afroChip, &cinematicChip, &hybridChip })
         chip->setColour (juce::TextButton::buttonOnColourId, theme::turquoise);
     for (auto* b : { &bars1, &bars2, &bars4 })
         b->setColour (juce::TextButton::buttonOnColourId, theme::turquoise);
@@ -56,8 +56,10 @@ void GenerationStrip::setSettings (const GeneratorSettings& s)
 {
     juce::TextButton* modes[] = { &dropButton, &breakButton, &buildButton, &grooveButton };
     modes[(int) s.mode]->setToggleState (true, juce::dontSendNotification);
+    // Indexed by the Family enum order, not the visual order.
     juce::TextButton* families[] = { &edmChip, &melodicChip, &psyChip, &arabicChip,
-                                     &medChip, &afroChip, &cinematicChip, &hybridChip };
+                                     &medChip, &afroChip, &cinematicChip, &hybridChip,
+                                     &urbanChip, &breaksChip };
     families[(int) s.family]->setToggleState (true, juce::dontSendNotification);
     energyKnob.setValue (s.energy, juce::dontSendNotification);
     densityKnob.setValue (s.density, juce::dontSendNotification);
@@ -74,6 +76,8 @@ GeneratorSettings GenerationStrip::getSettings() const
            : grooveButton.getToggleState() ? Mode::GROOVE : Mode::DROP;
     s.family = melodicChip.getToggleState() ? Family::MELODIC_TECHNO
              : psyChip.getToggleState() ? Family::PSYTRANCE
+             : urbanChip.getToggleState() ? Family::URBAN
+             : breaksChip.getToggleState() ? Family::BREAKS
              : arabicChip.getToggleState() ? Family::ARABIC
              : medChip.getToggleState() ? Family::MEDITERRANEAN
              : afroChip.getToggleState() ? Family::AFRO
@@ -124,9 +128,9 @@ void GenerationStrip::resized()
     // labels so MEDITERRANEAN reads while EDM stays compact.
     area.removeFromLeft (6);
     auto chipArea = area.removeFromLeft (juce::jmax (330, area.getWidth() * 40 / 100));
-    juce::TextButton* chipRows[2][4] = {
-        { &edmChip, &melodicChip, &psyChip, &arabicChip },
-        { &medChip, &afroChip, &cinematicChip, &hybridChip } };
+    juce::TextButton* chipRows[2][5] = {
+        { &edmChip, &melodicChip, &psyChip, &urbanChip, &breaksChip },
+        { &arabicChip, &medChip, &afroChip, &cinematicChip, &hybridChip } };
     const int rowH = chipArea.getHeight() / 2;
     for (int row = 0; row < 2; ++row)
     {

@@ -9,6 +9,7 @@
 #include "../Engine/LoopRenderer.h"
 #include "../Engine/RenderCache.h"
 #include "../Engine/MidiExporter.h"
+#include "../Engine/SampleTransform.h"
 #include "../Playback/PreviewPlayer.h"
 
 using namespace orcha;
@@ -538,6 +539,103 @@ int main()
                 LoopGenerator::generate (seed, s)).events.size();
         }
         check (cinEvents < edmEvents * 0.75, "CINEMATIC keeps its air");
+    }
+
+    // --- sample transforms ----------------------------------------------------------
+    {
+        // Silence padding around a burst: trim must remove it; reverse must
+        // mirror the audio exactly. Both non-destructive by construction.
+        auto padded = std::make_shared<InputSample>();
+        const int pad = (int) (sr * 0.2);
+        const int body = (int) (sr * 0.1);
+        padded->buffer.setSize (1, pad + body + pad);
+        padded->buffer.clear();
+        for (int i = 0; i < body; ++i)
+            padded->buffer.setSample (0, pad + i,
+                0.6f * std::sin (juce::MathConstants<float>::twoPi * 500.0f * (float) i / (float) sr));
+        padded->sourceSampleRate = sr;
+
+        const auto trimmed = orcha::SampleTransform::apply (*padded, { false, true });
+        check (trimmed->buffer.getNumSamples() < padded->buffer.getNumSamples() / 2,
+               "trim removes the silence padding");
+        check (trimmed->buffer.getMagnitude (0, trimmed->buffer.getNumSamples()) > 0.4f,
+               "trim keeps the audio itself");
+
+        const auto reversed = orcha::SampleTransform::apply (*padded, { true, false });
+        bool mirrored = reversed->buffer.getNumSamples() == padded->buffer.getNumSamples();
+        const int n = padded->buffer.getNumSamples();
+        for (int i = 0; mirrored && i < n; i += 997)
+            mirrored = reversed->buffer.getSample (0, i)
+                     == padded->buffer.getSample (0, n - 1 - i);
+        check (mirrored, "reverse mirrors the buffer exactly");
+    }
+
+    // --- per-card FX ----------------------------------------------------------------
+    {
+        LoopRenderer::Context ctx;
+        ctx.sampleRate = sr;
+        ctx.bpm = 124.0;
+        ctx.samples = { makeHit (100.0, sr, 0.3) };
+        ctx.roleMap = SampleAnalyzer::assignRoles (ctx.samples);
+
+        GeneratorSettings s;
+        auto dry = PatternValidator::validate (LoopGenerator::generate (515, s));
+        auto wet = dry;
+        wet.fxReverb = true;
+        wet.fxDelay = true;
+
+        const auto dryBuf = LoopRenderer::render (dry, ctx);
+        const auto wetBuf = LoopRenderer::render (wet, ctx);
+        const auto wetBuf2 = LoopRenderer::render (wet, ctx);
+        check (wetBuf.getNumSamples() == dryBuf.getNumSamples(),
+               "FX does not change the loop length");
+        bool differs = false;
+        for (int i = 0; i < dryBuf.getNumSamples() && ! differs; i += 31)
+            differs = dryBuf.getSample (0, i) != wetBuf.getSample (0, i);
+        check (differs, "FX audibly changes the render");
+        bool sameTwice = true;
+        for (int i = 0; i < wetBuf.getNumSamples() && sameTwice; i += 31)
+            sameTwice = wetBuf.getSample (0, i) == wetBuf2.getSample (0, i);
+        check (sameTwice, "FX render is deterministic");
+        check (wetBuf.getMagnitude (0, wetBuf.getNumSamples())
+                   <= juce::Decibels::decibelsToGain (-1.0f) + 1.0e-4f,
+               "FX render still honors the -1 dBFS ceiling");
+    }
+
+    // --- URBAN / BREAKS carry their documented signatures ---------------------------
+    {
+        // Dembow: the tresillo snare on the "a" of 1 (step 3) shows up often.
+        GeneratorSettings urb;
+        urb.family = Family::URBAN;
+        urb.mode = Mode::GROOVE;
+        int tresillo = 0;
+        for (int i = 0; i < 24; ++i)
+        {
+            const auto p = PatternValidator::validate (LoopGenerator::generate (
+                LoopGenerator::deriveSeed (50505, i), urb));
+            for (const auto& e : p.events)
+                if (e.role == Role::MID && std::abs (e.pos - 3.0) < 0.26)
+                {
+                    ++tresillo;
+                    break;
+                }
+        }
+        check (tresillo >= 6, "URBAN speaks the tresillo snare");
+
+        // BREAKS: ghost snares (quiet MID hits) are the aesthetic.
+        GeneratorSettings brk;
+        brk.family = Family::BREAKS;
+        brk.mode = Mode::GROOVE;
+        int ghostSnares = 0;
+        for (int i = 0; i < 24; ++i)
+        {
+            const auto p = PatternValidator::validate (LoopGenerator::generate (
+                LoopGenerator::deriveSeed (60606, i), brk));
+            for (const auto& e : p.events)
+                if (e.role == Role::MID && e.velocity <= 0.4f)
+                    ++ghostSnares;
+        }
+        check (ghostSnares >= 24, "BREAKS keeps its ghost snares");
     }
 
     // --- variation preserves the motif ---------------------------------------------

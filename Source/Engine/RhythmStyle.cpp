@@ -337,6 +337,96 @@ static StyleInfo makeHybrid()
     return s;
 }
 
+// URBAN: dembow/reggaeton, trap, drill, baile funk - documented placements.
+// Dembow: kick on 1 and 3, snare on the "a" of 1 and the "and" of 2 (the
+// tresillo 3+3+2 against the grid). Baile funk tamborzao approximates the
+// six-triplet kick grid (positions 1,3,4,6) onto 16ths as 0/5/8/13.
+static StyleInfo makeUrban()
+{
+    StyleInfo s;
+    s.ornamentDensity = 0.5f;
+    s.accentMap = { 1.00f, 0.70f, 0.85f, 0.92f, 0.88f, 0.70f, 0.95f, 0.72f,
+                    1.00f, 0.70f, 0.85f, 0.92f, 0.88f, 0.72f, 0.90f, 0.80f };
+    s.highFeelMs = 1.5f;
+    s.ghostiness = 0.5f;
+    s.skeletons = {
+        // Dembow: the boom-ch-boom-chick that reggaeton stands on.
+        { "dembow", {
+            { 0, Role::LOW, 1.0f }, { 8, Role::LOW, 0.95f },
+            { 4, Role::LOW, 0.55f }, { 12, Role::LOW, 0.55f },
+            { 3, Role::MID, 0.8f }, { 6, Role::MID, 0.78f },
+            { 11, Role::MID, 0.8f }, { 14, Role::MID, 0.78f },
+            { 2, Role::HIGH, 0.45f }, { 10, Role::HIGH, 0.45f } },
+          0.05, { 5, 7, 13, 15 } },
+        // Trap halftime: one kick, snare on beat 3, the hats do the talking.
+        { "trap_halftime", {
+            { 0, Role::LOW, 1.0f }, { 7, Role::LOW, 0.6f }, { 10, Role::LOW, 0.55f },
+            { 8, Role::MID, 0.9f },
+            { 0, Role::HIGH, 0.5f }, { 2, Role::HIGH, 0.45f }, { 4, Role::HIGH, 0.5f },
+            { 6, Role::HIGH, 0.45f }, { 8, Role::HIGH, 0.5f }, { 10, Role::HIGH, 0.45f },
+            { 12, Role::HIGH, 0.5f }, { 14, Role::HIGH, 0.45f } },
+          0.35, { 3, 7, 11, 13, 15 } },
+        // Drill: scattered kick (1, a-of-2, e-of-3), snare 3, restless hats.
+        { "drill_scatter", {
+            { 0, Role::LOW, 1.0f }, { 7, Role::LOW, 0.8f }, { 10, Role::LOW, 0.75f },
+            { 8, Role::MID, 0.85f }, { 14, Role::MID, 0.45f },
+            { 2, Role::HIGH, 0.5f }, { 5, Role::HIGH, 0.45f }, { 11, Role::HIGH, 0.5f },
+            { 13, Role::HIGH, 0.45f } },
+          0.25, { 3, 6, 12, 15 } },
+        // Baile funk tamborzao: the triplet kick grid folded onto 16ths.
+        { "baile_tamborzao", {
+            { 0, Role::LOW, 1.0f }, { 5, Role::LOW, 0.85f }, { 8, Role::LOW, 0.9f },
+            { 13, Role::LOW, 0.85f },
+            { 4, Role::MID, 0.7f }, { 12, Role::MID, 0.7f },
+            { 2, Role::HIGH, 0.45f }, { 10, Role::HIGH, 0.45f } },
+          0.1, { 3, 7, 11, 15 } } };
+    return s;
+}
+
+// BREAKS: jungle/breakbeat, UK garage 2-step, footwork. Ghost snares and
+// swing are the entire aesthetic, so ghostiness runs high and the 2-step
+// kick deliberately skips beats (1, and-of-2, e-of-3 per the beat guides).
+static StyleInfo makeBreaks()
+{
+    StyleInfo s;
+    s.ornamentDensity = 0.6f;
+    s.accentMap = { 1.00f, 0.72f, 0.85f, 0.78f, 1.00f, 0.72f, 0.88f, 0.80f,
+                    0.95f, 0.74f, 0.85f, 0.78f, 1.00f, 0.74f, 0.88f, 0.86f };
+    s.highFeelMs = 2.0f;
+    s.ghostiness = 0.7f;
+    s.skeletons = {
+        // Amen-style: backbeat snares with the famous ghost pair behind them.
+        { "amen_shuffle", {
+            { 0, Role::LOW, 1.0f }, { 10, Role::LOW, 0.85f },
+            { 4, Role::MID, 0.95f }, { 12, Role::MID, 0.95f },
+            { 7, Role::MID, 0.35f }, { 9, Role::MID, 0.35f },
+            { 2, Role::HIGH, 0.5f }, { 6, Role::HIGH, 0.5f }, { 10, Role::HIGH, 0.5f },
+            { 14, Role::HIGH, 0.5f } },
+          0.25, { 3, 11, 13, 15 } },
+        // 2-step garage: the kick skips the floor, the shuffle carries it.
+        { "two_step", {
+            { 0, Role::LOW, 1.0f }, { 6, Role::LOW, 0.85f }, { 9, Role::LOW, 0.7f },
+            { 4, Role::MID, 0.9f }, { 12, Role::MID, 0.95f },
+            { 2, Role::HIGH, 0.5f }, { 6, Role::HIGH, 0.45f }, { 10, Role::HIGH, 0.5f },
+            { 14, Role::HIGH, 0.5f } },
+          0.45, { 3, 7, 11, 15 } },
+        // Think-style break: tighter, more forward than the amen.
+        { "think_break", {
+            { 0, Role::LOW, 1.0f }, { 7, Role::LOW, 0.75f },
+            { 4, Role::MID, 0.95f }, { 12, Role::MID, 0.9f }, { 14, Role::MID, 0.35f },
+            { 2, Role::HIGH, 0.5f }, { 6, Role::HIGH, 0.5f }, { 10, Role::HIGH, 0.55f },
+            { 14, Role::HIGH, 0.5f } },
+          0.2, { 2, 9, 11, 15 } },
+        // Footwork: the 3+3+2 low line at sparse velocity, claps answering.
+        { "footwork_160", {
+            { 0, Role::LOW, 1.0f }, { 3, Role::LOW, 0.75f }, { 6, Role::LOW, 0.8f },
+            { 8, Role::LOW, 0.7f }, { 11, Role::LOW, 0.75f }, { 14, Role::LOW, 0.7f },
+            { 12, Role::MID, 0.8f },
+            { 4, Role::HIGH, 0.45f } },
+          0.1, { 2, 5, 10, 15 } } };
+    return s;
+}
+
 const StyleInfo& RhythmStyle::get (Family family)
 {
     static const StyleInfo edm = makeEdm();
@@ -347,9 +437,13 @@ const StyleInfo& RhythmStyle::get (Family family)
     static const StyleInfo afro = makeAfro();
     static const StyleInfo cinematic = makeCinematic();
     static const StyleInfo hybrid = makeHybrid();
+    static const StyleInfo urban = makeUrban();
+    static const StyleInfo breaks = makeBreaks();
 
     switch (family)
     {
+        case Family::URBAN:          return urban;
+        case Family::BREAKS:         return breaks;
         case Family::EDM:            return edm;
         case Family::MELODIC_TECHNO: return melodic;
         case Family::PSYTRANCE:      return psy;

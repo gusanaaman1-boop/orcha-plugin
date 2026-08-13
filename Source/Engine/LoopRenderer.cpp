@@ -1,8 +1,77 @@
 #include "LoopRenderer.h"
+#include <juce_audio_basics/juce_audio_basics.h>
+#include <juce_audio_utils/juce_audio_utils.h>
 #include <cmath>
 
 namespace orcha
 {
+
+namespace
+{
+    // Gentle, fixed-amount per-card effects, baked into the loop. The trick
+    // that keeps the loop seamless: process TWO passes of the loop through
+    // the effect and keep the second - the first pass's tail wraps into it,
+    // so the loop start already carries the reverb/delay of the loop end.
+    void applyLoopFx (juce::AudioBuffer<float>& loop, double sampleRate, double bpm,
+                      bool reverb, bool delay)
+    {
+        if (! reverb && ! delay)
+            return;
+
+        const int len = loop.getNumSamples();
+        juce::AudioBuffer<float> twice (2, len * 2);
+        for (int ch = 0; ch < 2; ++ch)
+        {
+            twice.copyFrom (ch, 0, loop, ch, 0, len);
+            twice.copyFrom (ch, len, loop, ch, 0, len);
+        }
+
+        if (delay)
+        {
+            // Dotted-8th feedback delay, high-passed so the lows stay clean.
+            const int delaySamples = juce::jmax (1,
+                (int) (0.75 * (60.0 / bpm) * sampleRate));
+            std::vector<float> dl ((size_t) delaySamples * 2, 0.0f);
+            float hp0 = 0.0f, hp1 = 0.0f;
+            size_t pos = 0;
+            const float feedback = 0.32f, wet = 0.22f;
+            for (int i = 0; i < twice.getNumSamples(); ++i)
+                for (int ch = 0; ch < 2; ++ch)
+                {
+                    float& hp = ch == 0 ? hp0 : hp1;
+                    float* d = twice.getWritePointer (ch);
+                    const size_t idx = pos * 2 + (size_t) ch;
+                    const float echo = dl[idx];
+                    // One-pole highpass at ~220 Hz inside the loop.
+                    hp += (echo - hp) * (float) (220.0 * juce::MathConstants<double>::twoPi
+                                                 / sampleRate);
+                    const float echoHp = echo - hp;
+                    dl[idx] = d[i] + echoHp * feedback;
+                    d[i] += echoHp * wet;
+                    if (ch == 1)
+                        pos = (pos + 1) % (size_t) delaySamples;
+                }
+        }
+
+        if (reverb)
+        {
+            juce::Reverb verb;
+            verb.setSampleRate (sampleRate);
+            juce::Reverb::Parameters params;
+            params.roomSize = 0.45f;
+            params.damping = 0.5f;
+            params.wetLevel = 0.16f;   // gentle - a halo, not a wash
+            params.dryLevel = 0.9f;
+            params.width = 1.0f;
+            verb.setParameters (params);
+            verb.processStereo (twice.getWritePointer (0), twice.getWritePointer (1),
+                                twice.getNumSamples());
+        }
+
+        for (int ch = 0; ch < 2; ++ch)
+            loop.copyFrom (ch, 0, twice, ch, len, len);
+    }
+}
 
 namespace
 {
@@ -157,6 +226,10 @@ juce::AudioBuffer<float> LoopRenderer::render (const Pattern& pattern, const Con
             d[i] *= juce::jmin (1.0f, (float) i / (float) edgeFade + 0.5f);
         }
     }
+
+    // Per-card polish, after the dry loop is final and before the headroom
+    // pass, so the ceiling still holds with the effect in.
+    applyLoopFx (out, ctx.sampleRate, ctx.bpm, pattern.fxReverb, pattern.fxDelay);
 
     // Headroom: one clean gain to keep the true peak at or below -1 dBFS.
     const float peak = out.getMagnitude (0, loopLen);

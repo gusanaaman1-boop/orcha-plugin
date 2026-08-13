@@ -17,9 +17,11 @@ public:
     std::function<void (const juce::File&)> onFileChosen;
     std::function<void()> onClear;
     std::function<void (Role)> onRoleChange;
+    std::function<void (bool reverse, bool trim)> onTransformChange;
 
     // nullptr = empty slot. loading = a decode job is in flight.
-    void update (InputSample::Ptr sample, bool loading);
+    void update (InputSample::Ptr sample, bool loading,
+                 bool reversed = false, bool trimmed = false);
 
     void paint (juce::Graphics&) override;
     void resized() override;
@@ -39,6 +41,7 @@ private:
     bool dragOver = false;
 
     juce::TextButton removeButton { "X" };
+    juce::TextButton reverseButton { "REV" }, trimButton { "TRIM" };
     juce::ComboBox roleBox;
     std::unique_ptr<juce::FileChooser> chooser;
 

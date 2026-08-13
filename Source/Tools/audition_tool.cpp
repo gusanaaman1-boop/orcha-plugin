@@ -42,8 +42,9 @@ int main (int argc, char* argv[])
     juce::WavAudioFormat wav;
     int written = 0, expected = 0;
     for (auto family : { Family::EDM, Family::MELODIC_TECHNO, Family::PSYTRANCE,
-                         Family::ARABIC, Family::MEDITERRANEAN, Family::AFRO,
-                         Family::CINEMATIC, Family::HYBRID })
+                         Family::URBAN, Family::BREAKS, Family::ARABIC,
+                         Family::MEDITERRANEAN, Family::AFRO, Family::CINEMATIC,
+                         Family::HYBRID })
         for (auto mode : { Mode::DROP, Mode::BREAK, Mode::BUILD, Mode::GROOVE })
         {
             ++expected;

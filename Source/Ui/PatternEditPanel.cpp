@@ -18,6 +18,20 @@ PatternEditPanel::PatternEditPanel (OrchaAudioProcessor& p) : processor (p)
     closeButton.onClick = [this] { close(); };
     addAndMakeVisible (closeButton);
 
+    // Gentle baked-in polish per card - fixed tasteful amounts, on or off.
+    for (auto* b : { &reverbButton, &delayButton })
+    {
+        b->setClickingTogglesState (true);
+        b->setColour (juce::TextButton::buttonOnColourId, theme::turquoise);
+        b->onClick = [this]
+        {
+            if (index >= 0)
+                processor.setOptionFx (index, reverbButton.getToggleState(),
+                                       delayButton.getToggleState());
+        };
+        addAndMakeVisible (*b);
+    }
+
     setVisible (false);
 }
 
@@ -28,6 +42,10 @@ void PatternEditPanel::openFor (int optionIndex)
         return;
     index = optionIndex;
     working = processor.option (optionIndex).pattern;
+    reverbButton.setToggleState (processor.option (optionIndex).fxReverb,
+                                 juce::dontSendNotification);
+    delayButton.setToggleState (processor.option (optionIndex).fxDelay,
+                                juce::dontSendNotification);
     setVisible (true);
     toFront (false);
     repaint();
@@ -200,6 +218,10 @@ void PatternEditPanel::resized()
     closeButton.setBounds (top.removeFromRight (76));
     top.removeFromRight (6);
     resetButton.setBounds (top.removeFromRight (70));
+    top.removeFromRight (14);
+    delayButton.setBounds (top.removeFromRight (66));
+    top.removeFromRight (4);
+    reverbButton.setBounds (top.removeFromRight (72));
 }
 
 void PatternEditPanel::mouseDown (const juce::MouseEvent& e)

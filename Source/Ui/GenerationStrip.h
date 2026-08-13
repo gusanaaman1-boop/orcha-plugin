@@ -29,9 +29,10 @@ private:
 
     juce::TextButton dropButton { "DROP" }, breakButton { "BREAK" },
                      buildButton { "BUILD" }, grooveButton { "GROOVE" };
-    // Two rows of four chips - eight families and the strip stays one strip.
+    // Two rows of five chips - ten families and the strip stays one strip.
     juce::TextButton edmChip { "EDM" }, melodicChip { "MELODIC TECHNO" },
-                     psyChip { "PSYTRANCE" }, arabicChip { "ARABIC" },
+                     psyChip { "PSYTRANCE" }, urbanChip { "URBAN" },
+                     breaksChip { "BREAKS" }, arabicChip { "ARABIC" },
                      medChip { "MEDITERRANEAN" }, afroChip { "AFRO" },
                      cinematicChip { "CINEMATIC" }, hybridChip { "HYBRID" };
     juce::Slider energyKnob, densityKnob, randomnessKnob;

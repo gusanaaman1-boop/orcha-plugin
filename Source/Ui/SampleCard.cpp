@@ -10,6 +10,20 @@ SampleCard::SampleCard (int slotIndex) : slot (slotIndex)
     removeButton.setColour (juce::TextButton::buttonColourId, theme::panel);
     removeButton.onClick = [this] { if (onClear) onClear(); };
 
+    // Quick non-destructive edits: reverse and tail-trim, both exact toggles.
+    for (auto* b : { &reverseButton, &trimButton })
+    {
+        b->setClickingTogglesState (true);
+        b->setColour (juce::TextButton::buttonOnColourId, theme::turquoise);
+        b->onClick = [this]
+        {
+            if (onTransformChange)
+                onTransformChange (reverseButton.getToggleState(),
+                                   trimButton.getToggleState());
+        };
+        addChildComponent (*b);
+    }
+
     addChildComponent (roleBox);
     int id = 1;
     for (auto role : { Role::AUTO, Role::LOW, Role::MID, Role::HIGH, Role::FX })
@@ -22,16 +36,23 @@ SampleCard::SampleCard (int slotIndex) : slot (slotIndex)
     };
 }
 
-void SampleCard::update (InputSample::Ptr s, bool nowLoading)
+void SampleCard::update (InputSample::Ptr s, bool nowLoading,
+                         bool reversed, bool trimmed)
 {
     // Timer-driven updates only repaint on an actual change.
-    if (sample == s && loading == nowLoading && ! dragOver)
+    if (sample == s && loading == nowLoading && ! dragOver
+        && reverseButton.getToggleState() == reversed
+        && trimButton.getToggleState() == trimmed)
         return;
     sample = std::move (s);
     loading = nowLoading;
     dragOver = false;
     removeButton.setVisible (sample != nullptr);
     roleBox.setVisible (sample != nullptr);
+    reverseButton.setVisible (sample != nullptr);
+    trimButton.setVisible (sample != nullptr);
+    reverseButton.setToggleState (reversed, juce::dontSendNotification);
+    trimButton.setToggleState (trimmed, juce::dontSendNotification);
     if (sample != nullptr)
         roleBox.setSelectedId ((int) sample->userRole + 1, juce::dontSendNotification);
     repaint();
@@ -42,6 +63,10 @@ void SampleCard::resized()
     removeButton.setBounds (getLocalBounds().reduced (8).removeFromTop (20).removeFromRight (20));
     auto bottom = getLocalBounds().reduced (8).removeFromBottom (20);
     roleBox.setBounds (bottom.removeFromRight (74));
+    bottom.removeFromRight (6);
+    trimButton.setBounds (bottom.removeFromRight (44));
+    bottom.removeFromRight (4);
+    reverseButton.setBounds (bottom.removeFromRight (40));
 }
 
 void SampleCard::paint (juce::Graphics& g)

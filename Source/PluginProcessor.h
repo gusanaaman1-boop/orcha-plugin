@@ -3,6 +3,7 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "Model/InputSample.h"
 #include "Engine/Pattern.h"
+#include "Engine/SampleTransform.h"
 #include "Playback/PreviewPlayer.h"
 
 namespace orcha
@@ -31,6 +32,8 @@ public:
         bool ready = false;             // false while a job is rebuilding it
         bool present = false;           // slot has ever been generated
         bool edited = false;            // user edits win over the generator
+        bool fxReverb = false;          // card-level polish, survives regen
+        bool fxDelay = false;
     };
 
     InputSample::Ptr getSample (int slot) const   { return samples[(size_t) slot]; }
@@ -39,6 +42,10 @@ public:
     void loadSampleAsync (int slot, const juce::File& file);
     void clearSample (int slot);
     void setUserRole (int slot, Role role);
+
+    // Non-destructive input edits: the raw decode is kept, toggling is exact.
+    SampleTransform::Settings getTransform (int slot) const { return transforms[(size_t) slot]; }
+    void setTransform (int slot, SampleTransform::Settings t);
 
     GeneratorSettings settings;         // editor edits directly, then generates
 
@@ -55,6 +62,8 @@ public:
     void applyEditedPattern (int index, Pattern edited);
     // Back to the generated version (same seeds), dropping the edits.
     void resetOptionEdits (int index);
+    // Gentle baked-in reverb/delay for one card; re-renders the same pattern.
+    void setOptionFx (int index, bool reverb, bool delay);
     void toggleFavorite (int index)     { options[(size_t) index].favorite = ! options[(size_t) index].favorite; notifyModel(); }
     void togglePlay (int index);
     bool anySampleLoaded() const;
@@ -101,13 +110,18 @@ private:
     // already be stored in pendingSeeds for those indices. extraSigs are
     // signatures the new results must additionally differ from (a variation
     // must differ from its own previous take).
+    // forceExisting renders each option's current pattern as-is (FX toggles),
+    // without requiring the edited flag.
     void enqueueBuild (std::vector<int> indices,
-                       juce::StringArray extraSigs = {});
+                       juce::StringArray extraSigs = {},
+                       bool forceExisting = false);
     void rerenderAtCurrentTempo();
 
     struct SeedPair { juce::uint64 motif = 0, orn = 0; };
 
-    std::vector<InputSample::Ptr> samples { numSlots, nullptr };
+    std::vector<InputSample::Ptr> samples { numSlots, nullptr };   // transformed
+    std::vector<InputSample::Ptr> rawSamples { numSlots, nullptr };
+    std::array<SampleTransform::Settings, numSlots> transforms {};
     RoleMap roleMap;
     std::array<Option, numOptions> options;
     std::array<SeedPair, numOptions> pendingSeeds {};

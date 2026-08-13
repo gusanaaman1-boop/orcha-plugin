@@ -9,7 +9,7 @@ namespace orcha
 
 enum class Mode   { DROP = 0, BREAK, BUILD, GROOVE };
 enum class Family { EDM = 0, MELODIC_TECHNO, PSYTRANCE, ARABIC, MEDITERRANEAN,
-                    AFRO, CINEMATIC, HYBRID };
+                    AFRO, CINEMATIC, HYBRID, URBAN, BREAKS };
 
 inline const char* modeName (Mode m)
 {
@@ -35,6 +35,8 @@ inline const char* familyName (Family f)
         case Family::AFRO:           return "AFRO";
         case Family::CINEMATIC:      return "CINEMATIC";
         case Family::HYBRID:         return "HYBRID";
+        case Family::URBAN:          return "URBAN";
+        case Family::BREAKS:         return "BREAKS";
     }
     return "EDM";
 }
@@ -48,6 +50,8 @@ inline Family familyFromName (const juce::String& s)
     if (s == "AFRO")           return Family::AFRO;
     if (s == "CINEMATIC")      return Family::CINEMATIC;
     if (s == "HYBRID")         return Family::HYBRID;
+    if (s == "URBAN")          return Family::URBAN;
+    if (s == "BREAKS")         return Family::BREAKS;
     return Family::EDM;
 }
 
@@ -109,6 +113,10 @@ struct Pattern
     GeneratorSettings settings;
     juce::String name;          // "DROP 01"
     double swing = 0.0;         // 0..1 of a 16th, applied to odd steps
+    // Per-card polish, baked into the render (and therefore the dragged WAV):
+    // gentle fixed-amount effects, chosen in the step editor.
+    bool fxReverb = false;
+    bool fxDelay = false;
     std::vector<Event> events;
 
     int stepCount() const { return settings.bars * 16; }
