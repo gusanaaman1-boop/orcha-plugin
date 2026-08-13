@@ -2,6 +2,7 @@
 #include "PatternValidator.h"
 #include "PhrasePlanner.h"
 #include "FeelVector.h"
+#include "Motif.h"
 #include <algorithm>
 
 namespace orcha
@@ -520,48 +521,71 @@ Pattern LoopGenerator::generateV2 (juce::uint64 motifSeed, juce::uint64 ornament
         }
     }
 
-    // --- 3. ornaments: budget follows the density trajectory -------------------
-    const float densityScale = 0.35f + 1.3f * settings.density;
-    const int candidateCount = (int) skel.ornamentSteps.size() * bars;
-    int targetAdds = juce::roundToInt ((float) candidateCount
-                                       * profile.baseDensity * style.ornamentDensity
-                                       * densityScale);
-    std::vector<int> candidates;
-    for (int bar = 0; bar < bars; ++bar)
-        for (int os : skel.ornamentSteps)
-            candidates.push_back (bar * 16 + os);
-    for (int i = (int) candidates.size() - 1; i > 0; --i)
-        std::swap (candidates[(size_t) i], candidates[(size_t) rng.pick (i + 1)]);
-
-    for (int cand : candidates)
+    // --- 3. THE MOTIF: one decorated cell, developed across the phrase --------
+    // The cell is built from the MOTIF stream, so "same groove, another take"
+    // now preserves the decoration identity too - not only the anchors.
+    const double motifSegLen = bars > 1 ? 16.0 : 8.0;
+    const int motifSegments = bars > 1 ? plan.segments() : 2;
+    auto motifRole = [&] (int mseg)
     {
-        if (targetAdds <= 0)
-            break;
-        const double pos = (double) cand;
-        const int seg = segOf (pos);
-        const auto role = segRole (seg);
-        // Planned air is untouchable: Breath and Vacuum take no decoration.
+        // 1-bar loops collapse the beat-level plan into two half-bar cells.
+        return bars > 1 ? segRole (mseg)
+                        : plan.roles[(size_t) (mseg == 0 ? 0 : 2)];
+    };
+
+    Motif::Cell cell;
+    cell.segLen = motifSegLen;
+    {
+        const float densityScale = 0.35f + 1.3f * settings.density;
+        const float fillP = juce::jlimit (0.1f, 0.95f,
+            profile.baseDensity * style.ornamentDensity * densityScale * 1.4f);
+        for (int os : skel.ornamentSteps)
+        {
+            if ((double) os >= motifSegLen)
+                continue;
+            if (! rngM.chance (fillP))
+                continue;
+            Event e;
+            e.pos = os;
+            e.role = rngM.chance (0.65f) ? leadRole
+                    : (leadRole == Role::HIGH ? Role::MID : Role::HIGH);
+            e.velocity = profile.velocityFloor + 0.25f * rngM.uni();
+            e.gateSteps = 0.75;
+            cell.events.push_back (e);
+        }
+    }
+
+    // Each segment restates the cell through its phrase role's transformation
+    // - explicit development, not random mutation of a copy.
+    juce::Random motifRng ((juce::int64) (motifSeed ^ 0x7A57E5ull));
+    for (int mseg = 0; mseg < motifSegments; ++mseg)
+    {
+        const auto role = motifRole (mseg);
         if (role == PhraseRole::Breath || role == PhraseRole::Vacuum)
             continue;
-        if (style.interlocking && stepOccupied (p.events, pos))
-            continue;
-        // The trajectory replaces v1's flat BUILD ramp: every mode now has a
-        // per-segment budget shape, weighted by the segment's function.
-        if (! rng.chance (juce::jlimit (0.05f, 1.0f,
-                0.55f * traj.at (traj.density, seg) * roleBudget (role))))
-            continue;
-        if (traj.at (traj.space, seg) > 0.6f && rng.chance (traj.at (traj.space, seg)))
-            continue;
+        const auto tr = mseg == 0 ? Motif::Transform::ExactRepeat
+                                  : Motif::choose (role, settings.family,
+                                                   settings.randomness, motifRng);
+        auto placed = Motif::apply (cell, tr, motifRng);
 
-        Event e;
-        e.pos = pos;
-        e.role = rng.chance (0.65f) ? leadRole : (leadRole == Role::HIGH ? Role::MID : Role::HIGH);
-        if (hasEventAt (p.events, pos, e.role))
-            continue;
-        e.velocity = profile.velocityFloor + 0.25f * rng.uni();
-        e.gateSteps = 0.75;
-        p.events.push_back (e);
-        --targetAdds;
+        // The per-segment budget still shapes the phrase (BUILD ramps,
+        // Establish stays plain, Accelerate earns extra weight).
+        const int trajSeg = bars > 1 ? mseg : mseg * 2;
+        const float keepP = juce::jlimit (0.25f, 1.0f,
+            0.35f + 0.6f * traj.at (traj.density, trajSeg) * roleBudget (role));
+        for (auto e : placed.events)
+        {
+            if (motifRng.nextFloat() > keepP)
+                continue;
+            e.pos += mseg * motifSegLen;
+            if (e.pos >= steps - 0.25)
+                continue;
+            if (style.interlocking && stepOccupied (p.events, e.pos))
+                continue;
+            if (hasEventAt (p.events, e.pos, e.role))
+                continue;
+            p.events.push_back (e);
+        }
     }
 
     if (settings.density < 0.35f)

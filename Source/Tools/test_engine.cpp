@@ -12,6 +12,7 @@
 #include "../Engine/SampleTransform.h"
 #include "../Engine/PhrasePlanner.h"
 #include "../Engine/FeelVector.h"
+#include "../Engine/Motif.h"
 #include "../Playback/PreviewPlayer.h"
 
 using namespace orcha;
@@ -1033,6 +1034,207 @@ int main()
             check (ms < 250.0, "96 symbolic v2 candidates well inside budget");
             std::cout << "  v2 benchmark: 96 candidates in "
                       << juce::String (ms, 2) << " ms\n";
+        }
+    }
+
+    // === ENGINE 2 / PHASE 2: MotifGrammar + CallResponsePlan =======================
+    {
+        // A known cell to transform: four hits across a bar.
+        Motif::Cell base;
+        base.segLen = 16.0;
+        for (double pos : { 2.0, 5.0, 10.0, 14.0 })
+        {
+            Event e;
+            e.pos = pos;
+            e.role = pos < 8.0 ? Role::HIGH : Role::MID;
+            e.velocity = 0.6f;
+            e.gateSteps = 0.75;
+            base.events.push_back (e);
+        }
+
+        using T = Motif::Transform;
+        juce::Random tr (42);
+        // --- every transformation behaves as documented ------------------------
+        check (Motif::apply (base, T::ExactRepeat, tr).events.size() == 4,
+               "ExactRepeat keeps everything");
+        check (Motif::apply (base, T::Truncate, tr).events.size() == 2,
+               "Truncate keeps only the first half");
+        check (Motif::apply (base, T::OmitLast, tr).events.size() == 3,
+               "OmitLast drops the final event");
+        {
+            const auto d = Motif::apply (base, T::DelayedRepeat, tr);
+            check (! d.events.empty() && d.events.front().pos == 2.5,
+                   "DelayedRepeat lands half a step later");
+        }
+        {
+            const auto a = Motif::apply (base, T::Anticipation, tr);
+            check (! a.events.empty() && a.events.front().pos == 1.5,
+                   "Anticipation pulls the cell ahead");
+        }
+        {
+            const auto e2 = Motif::apply (base, T::EchoSofter, tr);
+            bool softer = true;
+            for (size_t i = 0; i < e2.events.size(); ++i)
+                softer = softer && e2.events[i].velocity < base.events[i].velocity;
+            check (softer, "EchoSofter softens every event");
+        }
+        {
+            const auto d = Motif::apply (base, T::DensifyEnd, tr);
+            check (d.events.size() > base.events.size(),
+                   "DensifyEnd doubles the ending into itself");
+        }
+        {
+            const auto q = Motif::apply (base, T::QuestionSilence, tr);
+            bool tailSilent = true;
+            for (const auto& e : q.events)
+                tailSilent = tailSilent && e.pos < 12.0;
+            check (tailSilent && ! q.events.empty(),
+                   "QuestionSilence withholds the ending");
+        }
+        {
+            const auto ans = Motif::apply (base, T::AnswerLowResolve, tr);
+            const bool hasLowResolve = std::any_of (ans.events.begin(), ans.events.end(),
+                [] (const Event& e) { return e.role == Role::LOW && e.pos == 12.0; });
+            check (hasLowResolve,
+                   "AnswerLowResolve lands a LOW on the last strong beat");
+        }
+        {
+            const auto disp = Motif::apply (base, T::Displace, tr);
+            check (! disp.events.empty() && disp.events.front().pos == 3.0,
+                   "Displace shifts the whole cell one step");
+        }
+
+        // --- forbidden family/style combinations -------------------------------
+        auto allows = [] (Family f, T t)
+        {
+            const auto& a = Motif::allowedFor (f);
+            return std::find (a.begin(), a.end(), t) != a.end();
+        };
+        check (! allows (Family::PSYTRANCE, T::Displace)
+               && ! allows (Family::PSYTRANCE, T::Anticipation),
+               "psytrance precision forbids displacement");
+        check (! allows (Family::ARABIC, T::Displace),
+               "arabic iqa' grammar forbids displacement");
+        check (allows (Family::AFRO, T::Displace),
+               "afro interlock welcomes displacement");
+        check (! allows (Family::CINEMATIC, T::DensifyEnd),
+               "cinematic space forbids densified endings");
+        // And choose() can never escape the family's allowed set.
+        for (int i = 0; i < 200; ++i)
+        {
+            juce::Random cr (i);
+            const auto t = Motif::choose (PhraseRole::Develop, Family::PSYTRANCE,
+                                          1.0f, cr);
+            check (allows (Family::PSYTRANCE, t),
+                   "choose() stays inside the family grammar");
+        }
+
+        // --- meter-aware similarity --------------------------------------------
+        check (Motif::similarity (base, base) > 0.99f, "a cell equals itself");
+        {
+            juce::Random sr (7);
+            const auto echo = Motif::apply (base, T::EchoSofter, sr);
+            const auto trunc = Motif::apply (base, T::Truncate, sr);
+            check (Motif::similarity (base, echo)
+                       > Motif::similarity (base, trunc),
+                   "an echo is closer than a truncation");
+        }
+
+        // --- call/response in real v2 BREAK phrases ----------------------------
+        {
+            GeneratorSettings s;
+            s.mode = Mode::BREAK;
+            s.bars = 4;
+            s.randomness = 0.3f;
+            int related = 0, notIdentical = 0, plans = 0;
+            for (int i = 0; i < 24; ++i)
+            {
+                const auto motif = LoopGenerator::deriveSeed (2468, i);
+                const auto cr = Motif::callResponseOf (
+                    PhrasePlanner::plan (Mode::BREAK, 4, motif),
+                    s.family, s.randomness, motif);
+                if (! cr.valid())
+                    continue;
+                ++plans;
+                const auto p = PatternValidator::validate (LoopGenerator::generateV2 (
+                    motif, LoopGenerator::deriveSeed (1357, i), s));
+                const auto callCell = Motif::extract (p, cr.callSegment, 16.0);
+                const auto respCell = Motif::extract (p, cr.responseSegment, 16.0);
+                if (callCell.events.empty())
+                    continue;
+                const float sim = Motif::similarity (callCell, respCell);
+                if (sim > 0.2f)
+                    ++related;
+                if (sim < 0.995f)
+                    ++notIdentical;
+            }
+            check (plans >= 20, "BREAK plans carry call/response");
+            check (related >= plans / 2,
+                   "the response reuses recognizable call material");
+            check (notIdentical >= plans / 2,
+                   "the response is a development, not a copy");
+        }
+
+        // --- ornament-only regeneration preserves the motif identity -----------
+        {
+            GeneratorSettings s;
+            s.mode = Mode::GROOVE;
+            s.randomness = 0.0f;
+            s.bars = 2;
+            for (int i = 0; i < 12; ++i)
+            {
+                const auto motif = LoopGenerator::deriveSeed (9876, i);
+                const auto a = PatternValidator::validate (LoopGenerator::generateV2 (
+                    motif, LoopGenerator::deriveSeed (10, i), s));
+                const auto b = PatternValidator::validate (LoopGenerator::generateV2 (
+                    motif, LoopGenerator::deriveSeed (20, i), s));
+                // The decorated cell (away from the roll-prone tail) must be
+                // identical at r=0: the motif now belongs to the motif seed.
+                juce::String sigA, sigB;
+                for (const auto& e : a.events)
+                    if (! e.protectedAnchor && ! e.roll && e.gateSteps == 0.75
+                        && e.pos < a.stepCount() - 4)
+                        sigA << juce::roundToInt (e.pos * 4.0) << ':'
+                             << (int) e.role << ';';
+                for (const auto& e : b.events)
+                    if (! e.protectedAnchor && ! e.roll && e.gateSteps == 0.75
+                        && e.pos < b.stepCount() - 4)
+                        sigB << juce::roundToInt (e.pos * 4.0) << ':'
+                             << (int) e.role << ';';
+                check (sigA == sigB,
+                       "another take keeps the motif, not only the anchors");
+            }
+        }
+
+        // --- low randomness = tighter identity across the phrase ---------------
+        {
+            GeneratorSettings tame, wild;
+            tame.mode = wild.mode = Mode::GROOVE;
+            tame.bars = wild.bars = 4;
+            tame.randomness = 0.0f;
+            wild.randomness = 1.0f;
+            double tameSim = 0.0, wildSim = 0.0;
+            int n = 0;
+            for (int i = 0; i < 24; ++i)
+            {
+                const auto motif = LoopGenerator::deriveSeed (555, i);
+                const auto orn = LoopGenerator::deriveSeed (666, i);
+                const auto pt = PatternValidator::validate (
+                    LoopGenerator::generateV2 (motif, orn, tame));
+                const auto pw = PatternValidator::validate (
+                    LoopGenerator::generateV2 (motif, orn, wild));
+                const auto t0 = Motif::extract (pt, 0, 16.0);
+                const auto t1 = Motif::extract (pt, 1, 16.0);
+                const auto w0 = Motif::extract (pw, 0, 16.0);
+                const auto w1 = Motif::extract (pw, 1, 16.0);
+                if (t0.events.empty() || w0.events.empty())
+                    continue;
+                tameSim += Motif::similarity (t0, t1);
+                wildSim += Motif::similarity (w0, w1);
+                ++n;
+            }
+            check (n >= 12 && tameSim > wildSim,
+                   "low randomness preserves stronger motif identity");
         }
     }
 
