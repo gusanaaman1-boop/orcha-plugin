@@ -1,5 +1,7 @@
 #include "LoopGenerator.h"
 #include "PatternValidator.h"
+#include "PhrasePlanner.h"
+#include "FeelVector.h"
 #include <algorithm>
 
 namespace orcha
@@ -408,6 +410,415 @@ Pattern LoopGenerator::generate (juce::uint64 motifSeed, juce::uint64 ornamentSe
     }
 
     // --- 10. validation happens in PatternValidator (caller runs it) ----------
+    std::sort (p.events.begin(), p.events.end(),
+               [] (const Event& a, const Event& b) { return a.pos < b.pos; });
+    return p;
+}
+
+// =============================================================================
+// ENGINE 2: the same musical toolbox, driven by a phrase plan. Every segment
+// (bar, or beat in a 1-bar loop) has a functional role decided before any
+// event lands, and the ornament/ghost/velocity stages follow deterministic
+// feel trajectories instead of flat constants.
+// =============================================================================
+Pattern LoopGenerator::generateV2 (juce::uint64 motifSeed, juce::uint64 ornamentSeed,
+                                   const GeneratorSettings& settings)
+{
+    Pattern p;
+    p.seed = motifSeed;
+    p.ornamentSeed = ornamentSeed;
+    p.settings = settings;
+    p.algo = 2;
+
+    Rng rngM (motifSeed);
+    Rng rng (ornamentSeed);
+    const auto& style = RhythmStyle::get (settings.family);
+    const auto profile = sectionProfile (settings.mode);
+    const int steps = p.stepCount();
+    const int bars = settings.bars;
+
+    // The plan and the feel: identity-level, so they derive from the motif
+    // seed and survive "same groove, another take".
+    const auto plan = PhrasePlanner::plan (settings.mode, bars, motifSeed);
+    const auto feel = FeelVector::derive (settings, motifSeed);
+    const auto traj = FeelTrajectory::derive (settings.mode, bars, feel);
+    auto segOf = [&] (double pos) { return plan.segmentOf (pos, steps); };
+    auto segRole = [&] (int seg)
+    {
+        return plan.roles[(size_t) juce::jlimit (0, plan.segments() - 1, seg)];
+    };
+    // How much decoration a segment's function invites, on top of the
+    // density trajectory: the Accelerate bar earns its extra weight here.
+    auto roleBudget = [] (PhraseRole role)
+    {
+        switch (role)
+        {
+            case PhraseRole::Accelerate:
+            case PhraseRole::Lift:       return 1.35f;
+            case PhraseRole::Impact:
+            case PhraseRole::Establish:  return 0.85f;
+            case PhraseRole::Develop:    return 1.1f;
+            case PhraseRole::Response:   return 1.05f;
+            default:                     return 1.0f;
+        }
+    };
+
+    // --- 1. skeleton + swing + lead role (motif stream, same as v1) ------------
+    const auto& skel = style.skeletons[(size_t) rngM.pick ((int) style.skeletons.size())];
+    p.swing = skel.defaultSwing * (0.6 + 0.8 * rngM.uni());
+    if (settings.mode == Mode::GROOVE)
+        p.swing = juce::jlimit (0.0, 1.0, p.swing + 0.08 * rngM.uni());
+    const Role leadRole = rngM.chance (0.5f) ? Role::HIGH : Role::MID;
+
+    // --- 2. anchors, governed by each segment's phrase role --------------------
+    for (int bar = 0; bar < bars; ++bar)
+    {
+        for (const auto& hit : skel.hits)
+        {
+            const double pos = bar * 16 + hit.step;
+            const auto role = segRole (segOf (pos));
+            const bool downbeat = hit.step == 0 && hit.role == Role::LOW;
+
+            if (profile.sparse && ! downbeat && rngM.chance (0.45f))
+                continue;
+
+            Role eventRole = hit.role;
+            switch (role)
+            {
+                case PhraseRole::Develop:
+                case PhraseRole::Lift:
+                    if (! downbeat && hit.role != Role::LOW && rngM.chance (0.25f))
+                        continue;
+                    break;
+                case PhraseRole::Contrast:
+                    // The B section: thinner, and the mid/high voices trade.
+                    if (! downbeat && rngM.chance (0.3f))
+                        continue;
+                    if (eventRole != Role::LOW && rngM.chance (0.35f))
+                        eventRole = eventRole == Role::HIGH ? Role::MID : Role::HIGH;
+                    break;
+                case PhraseRole::Breath:
+                    if (! downbeat && rngM.chance (0.75f))
+                        continue;
+                    break;
+                case PhraseRole::Vacuum:
+                    if (! downbeat)
+                        continue;
+                    break;
+                default:
+                    break;   // Impact/Establish/Lock/Call/Response/... keep all
+            }
+
+            Event e;
+            e.pos = pos;
+            e.role = eventRole;
+            e.velocity = hit.accent;
+            e.protectedAnchor = hit.role == Role::LOW || hit.accent >= 0.75f;
+            if (hit.role == Role::LOW && hit.accent < 0.5f)
+                e.gateSteps = 1.0;
+            p.events.push_back (e);
+        }
+    }
+
+    // --- 3. ornaments: budget follows the density trajectory -------------------
+    const float densityScale = 0.35f + 1.3f * settings.density;
+    const int candidateCount = (int) skel.ornamentSteps.size() * bars;
+    int targetAdds = juce::roundToInt ((float) candidateCount
+                                       * profile.baseDensity * style.ornamentDensity
+                                       * densityScale);
+    std::vector<int> candidates;
+    for (int bar = 0; bar < bars; ++bar)
+        for (int os : skel.ornamentSteps)
+            candidates.push_back (bar * 16 + os);
+    for (int i = (int) candidates.size() - 1; i > 0; --i)
+        std::swap (candidates[(size_t) i], candidates[(size_t) rng.pick (i + 1)]);
+
+    for (int cand : candidates)
+    {
+        if (targetAdds <= 0)
+            break;
+        const double pos = (double) cand;
+        const int seg = segOf (pos);
+        const auto role = segRole (seg);
+        // Planned air is untouchable: Breath and Vacuum take no decoration.
+        if (role == PhraseRole::Breath || role == PhraseRole::Vacuum)
+            continue;
+        if (style.interlocking && stepOccupied (p.events, pos))
+            continue;
+        // The trajectory replaces v1's flat BUILD ramp: every mode now has a
+        // per-segment budget shape, weighted by the segment's function.
+        if (! rng.chance (juce::jlimit (0.05f, 1.0f,
+                0.55f * traj.at (traj.density, seg) * roleBudget (role))))
+            continue;
+        if (traj.at (traj.space, seg) > 0.6f && rng.chance (traj.at (traj.space, seg)))
+            continue;
+
+        Event e;
+        e.pos = pos;
+        e.role = rng.chance (0.65f) ? leadRole : (leadRole == Role::HIGH ? Role::MID : Role::HIGH);
+        if (hasEventAt (p.events, pos, e.role))
+            continue;
+        e.velocity = profile.velocityFloor + 0.25f * rng.uni();
+        e.gateSteps = 0.75;
+        p.events.push_back (e);
+        --targetAdds;
+    }
+
+    if (settings.density < 0.35f)
+    {
+        const float dropChance = (0.35f - settings.density) * 2.2f;
+        p.events.erase (std::remove_if (p.events.begin(), p.events.end(),
+            [&] (const Event& e)
+            { return ! e.protectedAnchor && rng.chance (dropChance); }),
+            p.events.end());
+    }
+
+    // --- 4. designed ghosts, segment-aware -------------------------------------
+    if (! profile.sparse)
+    {
+        for (int step = 0; step < steps; ++step)
+        {
+            if (step % 4 == 0)
+                continue;
+            const double pos = (double) step;
+            const int seg = segOf (pos);
+            const auto role = segRole (seg);
+            if (role == PhraseRole::Breath || role == PhraseRole::Vacuum)
+                continue;
+            if (traj.at (traj.space, seg) > 0.7f)
+                continue;
+            const float ghostP = style.ghostiness
+                * (0.18f + 0.45f * settings.density)
+                * traj.at (traj.density, seg) * roleBudget (role);
+            if (stepOccupied (p.events, pos) || ! rng.chance (ghostP))
+                continue;
+            Event g;
+            g.pos = pos;
+            g.role = leadRole;
+            g.velocity = 0.10f + 0.15f * rng.uni();
+            g.gateSteps = 0.5;
+            p.events.push_back (g);
+        }
+    }
+
+    // --- 5. randomness (same vocabulary as v1) ---------------------------------
+    const float r = settings.randomness;
+    for (auto& e : p.events)
+    {
+        if (e.protectedAnchor)
+            continue;
+        if (rng.chance (r * 0.4f))
+            e.pos = juce::jlimit (0.0, (double) steps - 1.0, e.pos + (rng.chance (0.5f) ? 1.0 : -1.0));
+        if (rng.chance (r * 0.25f) && e.role != Role::LOW)
+            e.role = e.role == Role::HIGH ? Role::MID : Role::HIGH;
+        if (rng.chance (r * 0.15f))
+            e.pitchSemis = rng.chance (0.5f) ? 2 : -2;
+    }
+    if (r > 0.15f)
+    {
+        std::vector<Event> graces;
+        for (const auto& e : p.events)
+            if (e.role == Role::HIGH && ! e.protectedAnchor && e.pos >= 1.0
+                && rng.chance (r * 0.3f))
+            {
+                Event g = e;
+                g.pos -= 0.5;
+                g.velocity *= 0.5f;
+                g.gateSteps = 0.5;
+                graces.push_back (g);
+            }
+        p.events.insert (p.events.end(), graces.begin(), graces.end());
+    }
+
+    // --- 6. call & response, now scoped to the planned segments ----------------
+    for (int seg = 0; seg + 1 < plan.segments(); ++seg)
+    {
+        if (segRole (seg) != PhraseRole::Call
+            || segRole (seg + 1) != PhraseRole::Response)
+            continue;
+        const double segLen = plan.beatLevel ? 4.0 : 16.0;
+        const double from = (seg + 1) * segLen, to = (seg + 2) * segLen;
+        for (auto& e : p.events)
+            if (e.pos >= from && e.pos < to && ! e.protectedAnchor)
+            {
+                if (rng.chance (0.3f))
+                    e.velocity = juce::jlimit (0.05f, 1.0f,
+                        e.velocity + (rng.chance (0.5f) ? 0.2f : -0.15f));
+                if (rng.chance (0.2f))
+                    e.pos = juce::jmin ((double) steps - 1.0, e.pos + 0.5);
+            }
+    }
+
+    // --- 7. energy + groove + the tension arc ----------------------------------
+    const float energy = settings.energy;
+    for (auto& e : p.events)
+    {
+        const bool onBeat = std::fmod (e.pos, 4.0) < 0.01;
+        float v = e.velocity;
+        if (onBeat)
+            v *= 0.85f + 0.35f * energy;
+        else
+            v *= 1.0f - profile.velocityContrast * 0.35f * (1.0f - energy);
+
+        const int mapStep = juce::jlimit (0, 15,
+            juce::roundToInt (std::floor (e.pos)) % 16);
+        const float mapW = style.accentMap[(size_t) mapStep];
+        v *= e.protectedAnchor ? 0.6f + 0.4f * mapW : mapW;
+
+        // The phrase moves: each segment tilts velocity by its tension, and
+        // the lead voice follows the brightness curve.
+        const int seg = segOf (e.pos);
+        v *= 0.88f + 0.24f * traj.at (traj.tensionArc, seg);
+        if (e.role == Role::HIGH)
+            v *= 0.9f + 0.2f * traj.at (traj.brightness, seg);
+
+        e.velocity = juce::jlimit (0.05f, 1.0f, v);
+
+        if (e.role == Role::LOW && energy > 0.7f && rng.chance (0.2f))
+            e.pitchSemis = -1;
+        if (! e.protectedAnchor)
+        {
+            e.microMs = (rng.uni() * 2.0f - 1.0f) * 3.0f * r;
+            if (e.role == Role::HIGH)
+                e.microMs += style.highFeelMs;
+            else if (e.role == Role::MID)
+                e.microMs += style.midFeelMs;
+        }
+    }
+
+    // DROP breathing, as in v1.
+    if (settings.mode == Mode::DROP && rng.chance (profile.silenceChance + 0.3f * energy))
+    {
+        const double holeStart = steps - (rng.chance (0.5f) ? 1.0 : 2.0);
+        p.events.erase (std::remove_if (p.events.begin(), p.events.end(),
+            [&] (const Event& e) { return e.pos >= holeStart && ! (e.pos == 0.0); }),
+            p.events.end());
+    }
+
+    // --- 8. endings: the plan decides between roll and vacuum ------------------
+    const bool planVacuum = plan.roles.back() == PhraseRole::Vacuum;
+    const float fillP = juce::jlimit (0.0f, 0.95f,
+        profile.fillChance + (settings.mode == Mode::DROP ? 0.25f * energy : 0.0f));
+
+    if (! planVacuum && rng.chance (fillP))
+    {
+        const Role rollRole = rng.chance (0.4f) ? Role::MID : Role::HIGH;
+        const int rollSteps = 2 + rng.pick (settings.mode == Mode::BUILD ? 3 : 2);
+        const double rollStart = steps - rollSteps;
+        p.events.erase (std::remove_if (p.events.begin(), p.events.end(),
+            [&] (const Event& e)
+            { return e.pos >= rollStart && e.role == rollRole && ! e.protectedAnchor; }),
+            p.events.end());
+
+        const bool accelerate = settings.mode == Mode::BUILD;
+        double spacing = accelerate ? 0.9 : rng.chance (0.3f) ? 1.0 / 3.0 : 0.5;
+        double pos = rollStart;
+        while (pos < steps - 0.25)
+        {
+            Event e;
+            e.pos = pos;
+            e.role = rollRole;
+            e.roll = true;
+            const float t = (float) (pos - rollStart) / (float) rollSteps;
+            e.velocity = juce::jlimit (0.1f, 1.0f, 0.35f + 0.6f * t * (0.5f + 0.5f * energy));
+            e.gateSteps = spacing;
+            if (settings.mode == Mode::BUILD)
+                e.pitchSemis = (int) (t * (3.0f + 5.0f * energy));
+            p.events.push_back (e);
+            pos += spacing;
+            if (accelerate)
+                spacing = juce::jmax (0.25, spacing * 0.8);
+        }
+    }
+
+    // --- 9. transition drama (v1 vocabulary, plan-aware) -----------------------
+    if (settings.mode == Mode::BUILD)
+    {
+        if (rng.chance (0.65f))
+        {
+            const bool descending = rng.chance (0.6f);
+            std::vector<Event*> countdown;
+            for (auto& e : p.events)
+                if (e.role == Role::LOW && e.protectedAnchor
+                    && e.pos >= steps - 16 && std::fmod (e.pos, 4.0) < 0.01)
+                    countdown.push_back (&e);
+            const int n = (int) countdown.size();
+            for (int k = 0; k < n; ++k)
+            {
+                const float t = n > 1 ? (float) k / (float) (n - 1) : 1.0f;
+                const int walk = juce::roundToInt (t * (5.0f + 4.0f * energy));
+                countdown[(size_t) k]->pitchSemis += descending ? -walk : walk;
+                countdown[(size_t) k]->velocity =
+                    juce::jlimit (0.05f, 1.0f, 0.8f + 0.2f * t);
+            }
+        }
+        if (planVacuum)
+        {
+            // The planned vacuum: the last segment empties, one accented
+            // pickup may throw into the entrance.
+            const double segLen = plan.beatLevel ? 4.0 : 16.0;
+            const double holeStart = steps - segLen * 0.5;
+            p.events.erase (std::remove_if (p.events.begin(), p.events.end(),
+                [holeStart] (const Event& e) { return e.pos >= holeStart; }),
+                p.events.end());
+            if (rng.chance (0.7f))
+            {
+                Event pickup;
+                pickup.pos = steps - 1.0;
+                pickup.role = Role::LOW;
+                pickup.velocity = 1.0f;
+                pickup.pitchSemis = rng.chance (0.4f) ? -2 : 0;
+                pickup.protectedAnchor = true;
+                p.events.push_back (pickup);
+            }
+        }
+    }
+
+    if (settings.mode == Mode::BREAK)
+    {
+        if (rng.chance (0.45f))
+        {
+            Event swell;
+            swell.pos = steps - 3.75;
+            swell.role = Role::HIGH;
+            swell.reverse = true;
+            swell.gateSteps = 3.45;
+            swell.velocity = 0.5f + 0.25f * energy;
+            p.events.push_back (swell);
+        }
+        if (rng.chance (0.35f))
+        {
+            const double pos = 4.0 + rng.pick (juce::jmax (1, steps - 8));
+            if (! stepOccupied (p.events, pos))
+            {
+                Event deep;
+                deep.pos = pos;
+                deep.role = Role::LOW;
+                deep.velocity = 0.85f;
+                deep.pitchSemis = -5;
+                deep.gateSteps = 3.0;
+                p.events.push_back (deep);
+            }
+        }
+    }
+
+    // 4-bar mid-phrase answer fill, as in v1, but never into planned air.
+    if (bars == 4 && segRole (1) != PhraseRole::Breath
+        && rng.chance (0.25f + profile.fillChance * 0.4f))
+    {
+        const Role halfRole = rng.chance (0.5f) ? Role::MID : Role::HIGH;
+        for (double pos = 30.5; pos < 31.9; pos += 0.5)
+        {
+            Event e;
+            e.pos = pos;
+            e.role = halfRole;
+            e.roll = true;
+            e.velocity = 0.3f + 0.2f * rng.uni();
+            e.gateSteps = 0.5;
+            p.events.push_back (e);
+        }
+    }
+
     std::sort (p.events.begin(), p.events.end(),
                [] (const Event& a, const Event& b) { return a.pos < b.pos; });
     return p;

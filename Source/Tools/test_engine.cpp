@@ -10,6 +10,8 @@
 #include "../Engine/RenderCache.h"
 #include "../Engine/MidiExporter.h"
 #include "../Engine/SampleTransform.h"
+#include "../Engine/PhrasePlanner.h"
+#include "../Engine/FeelVector.h"
 #include "../Playback/PreviewPlayer.h"
 
 using namespace orcha;
@@ -656,6 +658,42 @@ int main()
         check (ghostSnares >= 24, "BREAKS keeps its ghost snares");
     }
 
+    // --- ENGINE 1 CHARACTERIZATION (Phase 0 of the Engine 2.0 upgrade) -------------
+    // Freezes the v1 generator bit-for-bit: a fixed seed grid across every
+    // family, mode and length, hashed. If this hash moves, v1 changed and old
+    // projects would silently regenerate differently. v2 lives beside v1 and
+    // is NOT covered by this hash.
+    {
+        juce::String all;
+        for (auto family : { Family::EDM, Family::MELODIC_TECHNO, Family::PSYTRANCE,
+                             Family::URBAN, Family::BREAKS, Family::ARABIC,
+                             Family::MEDITERRANEAN, Family::AFRO, Family::CINEMATIC,
+                             Family::HYBRID })
+            for (auto mode : { Mode::DROP, Mode::BREAK, Mode::BUILD, Mode::GROOVE })
+                for (int bars : { 1, 2, 4 })
+                    for (int i = 0; i < 3; ++i)
+                    {
+                        GeneratorSettings s;
+                        s.family = family;
+                        s.mode = mode;
+                        s.bars = bars;
+                        const auto p = PatternValidator::validate (
+                            LoopGenerator::generate (
+                                LoopGenerator::deriveSeed (0xF0F0, i),
+                                LoopGenerator::deriveSeed (0x0E0E, i), s));
+                        all << p.signature() << '|';
+                        for (const auto& e : p.events)
+                            all << juce::String (e.velocity, 4) << ','
+                                << juce::String (e.microMs, 3) << ','
+                                << e.pitchSemis << ',' << (int) e.gateSteps << ';';
+                    }
+        const juce::int64 hash = all.hashCode64();
+        const juce::int64 golden = 3514363310548923428LL;   // recorded 2026-08-13, v0.9.0
+        if (hash != golden)
+            std::cout << "  v1 characterization hash: " << hash << "\n";
+        check (hash == golden, "ENGINE 1 IS FROZEN - characterization hash unchanged");
+    }
+
     // --- transition drama: BUILD countdown + gap, BREAK reverse swell ---------------
     {
         GeneratorSettings bld;
@@ -811,6 +849,191 @@ int main()
         // 2 bars at 960 ppq = 7680 ticks; nothing may start beyond the loop.
         check (maxTick < 2 * 4 * 960, "no note starts past the loop end");
         mid.deleteFile();
+    }
+
+    // === ENGINE 2 / PHASE 1: PhrasePlanner + FeelVector + generateV2 ===============
+    {
+        // --- plan legality + determinism for every mode x length ---------------
+        for (auto mode : { Mode::DROP, Mode::BREAK, Mode::BUILD, Mode::GROOVE })
+            for (int bars : { 1, 2, 4 })
+                for (int i = 0; i < 8; ++i)
+                {
+                    const auto seed = LoopGenerator::deriveSeed (0x9101, i);
+                    const auto a = PhrasePlanner::plan (mode, bars, seed);
+                    const auto b = PhrasePlanner::plan (mode, bars, seed);
+                    check (a.roles == b.roles, "phrase plan is deterministic");
+                    check (a.segments() == (bars > 1 ? bars : 4),
+                           "plan covers every segment");
+                    check (a.beatLevel == (bars == 1), "1-bar plans are beat-level");
+                }
+        // Grammar spot checks.
+        check (PhrasePlanner::plan (Mode::BREAK, 4, 7).roles.back() == PhraseRole::Breath,
+               "4-bar BREAK ends in Breath");
+        check (PhrasePlanner::plan (Mode::DROP, 4, 7).roles.front() == PhraseRole::Impact,
+               "4-bar DROP opens with Impact");
+        check (PhrasePlanner::plan (Mode::GROOVE, 4, 7).roles[2] == PhraseRole::Contrast,
+               "4-bar GROOVE has its B section");
+
+        // --- FeelVector: section-aware macro mapping ---------------------------
+        {
+            GeneratorSettings hiE;
+            hiE.energy = 1.0f;
+            hiE.mode = Mode::BREAK;
+            const auto fBreak = FeelVector::derive (hiE, 42);
+            hiE.mode = Mode::DROP;
+            const auto fDrop = FeelVector::derive (hiE, 42);
+            check (fBreak.space > fDrop.space,
+                   "high energy keeps space in BREAK but spends it in DROP");
+            check (fDrop.aggression > fBreak.aggression,
+                   "DROP energy is aggression, BREAK energy is tension");
+            GeneratorSettings psy;
+            psy.family = Family::PSYTRANCE;
+            psy.randomness = 1.0f;
+            check (FeelVector::derive (psy, 1).looseness < 0.1f,
+                   "PSYTRANCE randomness never buys looseness");
+        }
+
+        // --- v2 determinism + core musical guarantees --------------------------
+        for (auto family : { Family::EDM, Family::ARABIC, Family::PSYTRANCE })
+            for (auto mode : { Mode::DROP, Mode::BREAK, Mode::BUILD, Mode::GROOVE })
+            {
+                GeneratorSettings s;
+                s.family = family;
+                s.mode = mode;
+                s.bars = 4;
+                const auto a = PatternValidator::validate (
+                    LoopGenerator::generateV2 (999, 111, s));
+                const auto b = PatternValidator::validate (
+                    LoopGenerator::generateV2 (999, 111, s));
+                check (a.signature() == b.signature() && a.algo == 2,
+                       "v2 is deterministic and tagged");
+                check (! a.events.empty(), "v2 never returns silence");
+                for (const auto& e : a.events)
+                    check (e.pos <= 64 - 0.25 + 1.0e-9, "v2 respects the boundary");
+            }
+        {
+            GeneratorSettings s;
+            double dropN = 0, breakN = 0;
+            for (int i = 0; i < 24; ++i)
+            {
+                s.mode = Mode::DROP;
+                dropN += (double) PatternValidator::validate (LoopGenerator::generateV2 (
+                    LoopGenerator::deriveSeed (11, i), LoopGenerator::deriveSeed (22, i), s))
+                    .events.size();
+                s.mode = Mode::BREAK;
+                breakN += (double) PatternValidator::validate (LoopGenerator::generateV2 (
+                    LoopGenerator::deriveSeed (11, i), LoopGenerator::deriveSeed (22, i), s))
+                    .events.size();
+            }
+            check (breakN < dropN * 0.7, "v2 BREAK stays meaningfully sparser than DROP");
+        }
+
+        // --- the phrase actually has shape -------------------------------------
+        auto eventsInBar = [] (const Pattern& p, int bar)
+        {
+            int n = 0;
+            for (const auto& e : p.events)
+                if (e.pos >= bar * 16 && e.pos < (bar + 1) * 16)
+                    ++n;
+            return n;
+        };
+        {
+            // BREAK: the Breath bar (4th) is emptier than the Call bar (2nd).
+            GeneratorSettings s;
+            s.mode = Mode::BREAK;
+            s.bars = 4;
+            int breathThinner = 0;
+            for (int i = 0; i < 24; ++i)
+            {
+                const auto p = PatternValidator::validate (LoopGenerator::generateV2 (
+                    LoopGenerator::deriveSeed (333, i), LoopGenerator::deriveSeed (444, i), s));
+                if (eventsInBar (p, 3) < eventsInBar (p, 1))
+                    ++breathThinner;
+            }
+            check (breathThinner >= 16, "v2 BREAK: the Breath bar is the emptiest");
+
+            // BUILD: density rises across the phrase (bar 3 vs bar 1),
+            // measured before the final bar where vacuum may empty it.
+            s.mode = Mode::BUILD;
+            double early = 0, late = 0;
+            for (int i = 0; i < 24; ++i)
+            {
+                const auto p = PatternValidator::validate (LoopGenerator::generateV2 (
+                    LoopGenerator::deriveSeed (555, i), LoopGenerator::deriveSeed (666, i), s));
+                early += eventsInBar (p, 0);
+                late += eventsInBar (p, 2);
+            }
+            check (late > early * 1.1, "v2 BUILD: the Accelerate bar outweighs Establish");
+
+            // GROOVE: the Contrast bar differs from Establish for most seeds.
+            s.mode = Mode::GROOVE;
+            int contrasts = 0;
+            for (int i = 0; i < 24; ++i)
+            {
+                const auto p = PatternValidator::validate (LoopGenerator::generateV2 (
+                    LoopGenerator::deriveSeed (777, i), LoopGenerator::deriveSeed (888, i), s));
+                juce::String barSig[2];
+                for (const auto& e : p.events)
+                {
+                    const int bar = (int) (e.pos / 16.0);
+                    if (bar == 0 || bar == 2)
+                        barSig[bar == 0 ? 0 : 1]
+                            << juce::roundToInt (std::fmod (e.pos, 16.0) * 4.0)
+                            << ':' << (int) e.role << ';';
+                }
+                if (barSig[0] != barSig[1])
+                    ++contrasts;
+            }
+            check (contrasts >= 18, "v2 GROOVE: the B section is a real contrast");
+        }
+
+        // --- "same groove, another take" holds in v2 ---------------------------
+        {
+            GeneratorSettings s;
+            s.mode = Mode::GROOVE;
+            s.family = Family::ARABIC;
+            auto anchorsOf = [] (const Pattern& p)
+            {
+                juce::String a;
+                for (const auto& e : p.events)
+                    if (e.protectedAnchor)
+                        a << juce::roundToInt (e.pos * 4.0) << ':' << (int) e.role << ';';
+                return a;
+            };
+            for (int i = 0; i < 12; ++i)
+            {
+                const auto motif = LoopGenerator::deriveSeed (1212, i);
+                const auto a = PatternValidator::validate (
+                    LoopGenerator::generateV2 (motif, LoopGenerator::deriveSeed (1, i), s));
+                const auto b = PatternValidator::validate (
+                    LoopGenerator::generateV2 (motif, LoopGenerator::deriveSeed (2, i), s));
+                check (anchorsOf (a) == anchorsOf (b),
+                       "v2 variation keeps every protected anchor");
+                check (a.swing == b.swing, "v2 variation keeps the swing");
+            }
+        }
+
+        // --- performance budget: symbolic generation is effectively free -------
+        {
+            GeneratorSettings s;
+            s.bars = 4;
+            const auto t0 = juce::Time::getHighResolutionTicks();
+            int total = 0;
+            for (int i = 0; i < 96; ++i)
+            {
+                s.family = (Family) (i % 10);
+                s.mode = (Mode) (i % 4);
+                total += (int) PatternValidator::validate (LoopGenerator::generateV2 (
+                    LoopGenerator::deriveSeed (4242, i),
+                    LoopGenerator::deriveSeed (2424, i), s)).events.size();
+            }
+            const double ms = juce::Time::highResolutionTicksToSeconds (
+                juce::Time::getHighResolutionTicks() - t0) * 1000.0;
+            check (total > 0, "benchmark generated real patterns");
+            check (ms < 250.0, "96 symbolic v2 candidates well inside budget");
+            std::cout << "  v2 benchmark: 96 candidates in "
+                      << juce::String (ms, 2) << " ms\n";
+        }
     }
 
     std::cout << (failures == 0 ? "ALL OK" : "FAILED") << " - "

@@ -127,7 +127,7 @@ void OrchaAudioProcessor::generateAll()
         if (opt.favorite && opt.present)
             continue;                   // favorites survive GENERATE MORE
         pendingSeeds[(size_t) i] = { LoopGenerator::deriveSeed (master, i),
-                                     LoopGenerator::deriveSeed (~master, i) };
+                                     LoopGenerator::deriveSeed (~master, i), 2 };
         opt.ready = false;
         toBuild.push_back (i);
     }
@@ -145,9 +145,11 @@ void OrchaAudioProcessor::regenerateOption (int index)
     // Same groove, another take: the motif seed survives, only the
     // ornament seed re-rolls. A never-generated card starts from scratch,
     // and manual edits make way for the fresh take.
+    // Regeneration is a user action: it upgrades the card to engine 2 even
+    // when the motif came from an old project.
     pendingSeeds[(size_t) index] = {
         opt.present ? opt.pattern.seed : LoopGenerator::deriveSeed (fresh, index),
-        LoopGenerator::deriveSeed (~fresh, index) };
+        LoopGenerator::deriveSeed (~fresh, index), 2 };
     opt.ready = false;
     opt.edited = false;
     // The new take must differ from the one it replaces - a card with a
@@ -291,11 +293,16 @@ void OrchaAudioProcessor::enqueueBuild (std::vector<int> indices,
                 // already on screen - "12 clearly different results" is a
                 // promise. Only the ornament seed re-rolls, so a variation
                 // request never loses its motif to the diversity check.
+                auto gen = [&] (juce::uint64 m, juce::uint64 o)
+                {
+                    return in.seeds.algo >= 2
+                        ? LoopGenerator::generateV2 (m, o, settingsCopy)
+                        : LoopGenerator::generate (m, o, settingsCopy);
+                };
                 juce::uint64 orn = in.seeds.orn;
                 for (int attempt = 0; attempt < 8; ++attempt)
                 {
-                    pattern = PatternValidator::validate (
-                        LoopGenerator::generate (in.seeds.motif, orn, settingsCopy));
+                    pattern = PatternValidator::validate (gen (in.seeds.motif, orn));
                     if (! existingSigs.contains (pattern.signature()))
                         break;
                     orn = LoopGenerator::deriveSeed (orn, 7777 + attempt);
@@ -309,8 +316,7 @@ void OrchaAudioProcessor::enqueueBuild (std::vector<int> indices,
                      ++attempt)
                 {
                     motif = LoopGenerator::deriveSeed (motif, 31337 + attempt);
-                    pattern = PatternValidator::validate (
-                        LoopGenerator::generate (motif, orn, settingsCopy));
+                    pattern = PatternValidator::validate (gen (motif, orn));
                 }
                 existingSigs.add (pattern.signature());
             }
@@ -341,7 +347,8 @@ void OrchaAudioProcessor::enqueueBuild (std::vector<int> indices,
                 opt.wavFile = wav;
                 opt.ready = true;
                 opt.present = true;
-                self->pendingSeeds[(size_t) index] = { pattern.seed, pattern.ornamentSeed };
+                self->pendingSeeds[(size_t) index] = { pattern.seed, pattern.ornamentSeed,
+                                                      pattern.algo };
                 // A playing card follows its refreshed audio seamlessly.
                 if (self->preview.playingOption() == index)
                     self->preview.play (loop);
@@ -366,7 +373,8 @@ void OrchaAudioProcessor::rerenderAtCurrentTempo()
         if (options[(size_t) i].present)
         {
             pendingSeeds[(size_t) i] = { options[(size_t) i].pattern.seed,
-                                         options[(size_t) i].pattern.ornamentSeed };
+                                         options[(size_t) i].pattern.ornamentSeed,
+                                         options[(size_t) i].pattern.algo };
             present.push_back (i);
         }
     if (! present.empty() && anySampleLoaded())
@@ -476,7 +484,7 @@ void OrchaAudioProcessor::notifyModel()
 void OrchaAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
     juce::ValueTree root ("ORCHA");
-    root.setProperty ("schema", 2, nullptr);
+    root.setProperty ("schema", 4, nullptr);
 
     juce::ValueTree st ("settings");
     st.setProperty ("mode", modeName (settings.mode), nullptr);
@@ -524,6 +532,8 @@ void OrchaAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
         v.setProperty ("favorite", opt.favorite, nullptr);
         v.setProperty ("rvb", (double) opt.fxReverb, nullptr);
         v.setProperty ("dly", (double) opt.fxDelay, nullptr);
+        v.setProperty ("algo", opt.present ? opt.pattern.algo
+                                           : pendingSeeds[(size_t) i].algo, nullptr);
 
         // A user-edited pattern cannot be rebuilt from seeds - store it whole.
         if (opt.edited)
@@ -597,7 +607,9 @@ void OrchaAudioProcessor::setStateInformation (const void* data, int sizeInBytes
             const auto orn = ornHex.isNotEmpty()
                 ? (juce::uint64) ornHex.getHexValue64()
                 : LoopGenerator::deriveSeed (motif, 4242);
-            pendingSeeds[(size_t) i] = { motif, orn };
+            // Projects saved before engine 2 carry no algo attribute: they
+            // restore through the frozen v1 path, bit-for-bit, forever.
+            pendingSeeds[(size_t) i] = { motif, orn, (int) v.getProperty ("algo", 1) };
             options[(size_t) i].favorite = v.getProperty ("favorite", false);
             // 0.6.0 saved these as bools; a bool var reads back as 0/1.
             options[(size_t) i].fxReverb = (float) (double) v.getProperty ("rvb", 0.0);
@@ -608,6 +620,7 @@ void OrchaAudioProcessor::setStateInformation (const void* data, int sizeInBytes
                 Pattern p;
                 p.seed = motif;
                 p.ornamentSeed = orn;
+                p.algo = pendingSeeds[(size_t) i].algo;
                 p.name = v.getProperty ("name", "");
                 p.swing = v.getProperty ("swing", 0.0);
                 p.settings = settings;

@@ -89,7 +89,8 @@ set(ORCHA_ENGINE_SOURCES
     Source/Engine/LoopRenderer.cpp
     Source/Engine/RenderCache.cpp
     Source/Engine/MidiExporter.cpp
-    Source/Engine/SampleTransform.cpp)
+    Source/Engine/SampleTransform.cpp
+    Source/Engine/PhrasePlanner.cpp)
 
 set(ORCHA_PLUGIN_SOURCES
     ${ORCHA_ENGINE_SOURCES}

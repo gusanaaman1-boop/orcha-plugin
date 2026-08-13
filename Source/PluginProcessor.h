@@ -120,7 +120,9 @@ private:
                        bool forceExisting = false);
     void rerenderAtCurrentTempo();
 
-    struct SeedPair { juce::uint64 motif = 0, orn = 0; };
+    // algo: which generator rebuilt this slot's pattern. Restored v0.9.0
+    // projects keep 1 (the frozen engine); new generations use 2.
+    struct SeedPair { juce::uint64 motif = 0, orn = 0; int algo = 2; };
 
     std::vector<InputSample::Ptr> samples { numSlots, nullptr };   // transformed
     std::vector<InputSample::Ptr> rawSamples { numSlots, nullptr };

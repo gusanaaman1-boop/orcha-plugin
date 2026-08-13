@@ -110,6 +110,9 @@ struct Pattern
 {
     juce::uint64 seed = 0;          // motif seed
     juce::uint64 ornamentSeed = 0;
+    // Which generator produced this. Old projects restore through the frozen
+    // v1 path bit-for-bit; new generations use v2. Never migrates silently.
+    int algo = 1;
     GeneratorSettings settings;
     juce::String name;          // "DROP 01"
     double swing = 0.0;         // 0..1 of a 16th, applied to odd steps

@@ -17,8 +17,16 @@ namespace orcha
 // re-roll the ornament seed to get "the same groove, another take".
 namespace LoopGenerator
 {
+    // ENGINE 1 - FROZEN. Old projects restore through this path bit-for-bit;
+    // a characterization hash in the test suite guards it. Do not change its
+    // random draw order or behavior.
     Pattern generate (juce::uint64 motifSeed, juce::uint64 ornamentSeed,
                       const GeneratorSettings& settings);
+
+    // ENGINE 2 - phrase-planned generation (FeelVector + PhrasePlanner).
+    // Same determinism contract; used for all NEW generations.
+    Pattern generateV2 (juce::uint64 motifSeed, juce::uint64 ornamentSeed,
+                        const GeneratorSettings& settings);
 
     // Convenience for callers that want one knob: ornament seed derived from
     // the motif seed.
