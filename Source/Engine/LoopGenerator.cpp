@@ -94,6 +94,10 @@ Pattern LoopGenerator::generate (juce::uint64 motifSeed, juce::uint64 ornamentSe
             e.role = hit.role;
             e.velocity = hit.accent;
             e.protectedAnchor = hit.role == Role::LOW || hit.accent >= 0.75f;
+            // Quiet skeleton LOWs are rolling-bass ghosts, not kicks that
+            // ring: choke them so the pump stays tight.
+            if (hit.role == Role::LOW && hit.accent < 0.5f)
+                e.gateSteps = 1.5;
             p.events.push_back (e);
         }
     }
@@ -146,6 +150,28 @@ Pattern LoopGenerator::generate (juce::uint64 motifSeed, juce::uint64 ornamentSe
             p.events.end());
     }
 
+    // Designed ghost layer: very quiet lead-role ticks in the empty off-grid
+    // slots. This is the pocket between the written hits - deliberate, not
+    // leftover randomness. Sparse sections keep their silence instead.
+    if (! profile.sparse)
+    {
+        const float ghostP = style.ghostiness * (0.18f + 0.45f * settings.density);
+        for (int step = 0; step < steps; ++step)
+        {
+            if (step % 4 == 0)
+                continue;                       // beats belong to the anchors
+            const double pos = (double) step;
+            if (stepOccupied (p.events, pos) || ! rng.chance (ghostP))
+                continue;
+            Event g;
+            g.pos = pos;
+            g.role = leadRole;
+            g.velocity = 0.10f + 0.15f * rng.uni();
+            g.gateSteps = 0.5;
+            p.events.push_back (g);
+        }
+    }
+
     // --- 4. randomness: distance from the skeleton ----------------------------
     const float r = settings.randomness;
     for (auto& e : p.events)
@@ -190,7 +216,7 @@ Pattern LoopGenerator::generate (juce::uint64 motifSeed, juce::uint64 ornamentSe
             }
     }
 
-    // --- 8. energy: velocity contour, accents, pre-impact silence -------------
+    // --- 8. energy + groove: velocity contour, accent map, feel ----------------
     const float energy = settings.energy;
     for (auto& e : p.events)
     {
@@ -200,6 +226,15 @@ Pattern LoopGenerator::generate (juce::uint64 motifSeed, juce::uint64 ornamentSe
             v *= 0.85f + 0.35f * energy;                       // accent lift
         else
             v *= 1.0f - profile.velocityContrast * 0.35f * (1.0f - energy);
+
+        // The family's cyclic accent map is the pocket: every 16th position
+        // has its own weight. Anchors keep most of their written accent;
+        // everything else takes the map in full.
+        const int mapStep = juce::jlimit (0, 15,
+            juce::roundToInt (std::floor (e.pos)) % 16);
+        const float mapW = style.accentMap[(size_t) mapStep];
+        v *= e.protectedAnchor ? 0.6f + 0.4f * mapW : mapW;
+
         if (profile.densityRamp)                               // BUILD contour
             v *= 0.55f + 0.45f * (float) (e.pos / steps);
         e.velocity = juce::jlimit (0.05f, 1.0f, v);
@@ -207,9 +242,17 @@ Pattern LoopGenerator::generate (juce::uint64 motifSeed, juce::uint64 ornamentSe
         // Weight at high energy: occasionally drop the LOW pitch for impact.
         if (e.role == Role::LOW && energy > 0.7f && rng.chance (0.2f))
             e.pitchSemis = -1;
-        // Humanize timing, but never the structural anchors.
+        // Humanize timing, but never the structural anchors. On top of the
+        // jitter, each role takes the family's feel: hats laid back, or the
+        // mid layer pushing - constant, so it reads as feel, not sloppiness.
         if (! e.protectedAnchor)
+        {
             e.microMs = (rng.uni() * 2.0f - 1.0f) * 3.0f * r;
+            if (e.role == Role::HIGH)
+                e.microMs += style.highFeelMs;
+            else if (e.role == Role::MID)
+                e.microMs += style.midFeelMs;
+        }
     }
 
     // DROP breathing: silence right before the next downbeat, so the loop

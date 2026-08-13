@@ -4,6 +4,7 @@
 #include "Ui/SampleCard.h"
 #include "Ui/GenerationStrip.h"
 #include "Ui/OptionCard.h"
+#include "Ui/PatternEditPanel.h"
 
 namespace orcha
 {
@@ -26,6 +27,9 @@ public:
     bool isInterestedInFileDrag (const juce::StringArray& files) override;
     void filesDropped (const juce::StringArray& files, int x, int y) override;
 
+    // For the deterministic screenshot tool.
+    void openEditPanelFor (int index) { editPanel.openFor (index); }
+
 private:
     void refresh();
     void timerCallback() override;
@@ -37,6 +41,7 @@ private:
     GenerationStrip strip;
     std::array<std::unique_ptr<OptionCard>, OrchaAudioProcessor::numOptions> optionCards;
     juce::TextButton generateMoreButton { "GENERATE MORE" };
+    PatternEditPanel editPanel;
 
     std::array<juce::uint32, OrchaAudioProcessor::numSlots> loadStartedAt {};
 

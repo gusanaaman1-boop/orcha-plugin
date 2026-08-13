@@ -30,6 +30,7 @@ public:
         bool favorite = false;
         bool ready = false;             // false while a job is rebuilding it
         bool present = false;           // slot has ever been generated
+        bool edited = false;            // user edits win over the generator
     };
 
     InputSample::Ptr getSample (int slot) const   { return samples[(size_t) slot]; }
@@ -43,7 +44,15 @@ public:
     void generateAll();                 // fresh seeds; favorites keep theirs
     // Variation: keeps the card's motif seed (same groove) and re-rolls only
     // the ornament seed. A card that was never generated gets both fresh.
+    // Discards manual edits - a fresh take starts from the generator.
     void regenerateOption (int index);
+
+    // Step-editor support: replace the option's pattern with the user's
+    // edit and re-render it. Edited patterns survive tempo/sample-rate
+    // re-renders and are stored verbatim in the plug-in state.
+    void applyEditedPattern (int index, Pattern edited);
+    // Back to the generated version (same seeds), dropping the edits.
+    void resetOptionEdits (int index);
     void toggleFavorite (int index)     { options[(size_t) index].favorite = ! options[(size_t) index].favorite; notifyModel(); }
     void togglePlay (int index);
     bool anySampleLoaded() const;

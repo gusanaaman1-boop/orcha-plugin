@@ -443,6 +443,63 @@ int main()
         check (mag() > 0.1f, "stopped host previews immediately");
     }
 
+    // --- the groove layer ----------------------------------------------------------
+    {
+        // Accent map: "e" positions (pos%4==1) must sit under the beats.
+        GeneratorSettings s;
+        s.mode = Mode::GROOVE;
+        s.family = Family::EDM;
+        s.randomness = 0.0f;
+        double beatVel = 0.0, eVel = 0.0;
+        int beatN = 0, eN = 0, ghosts = 0, laidBackOk = 0, laidBackTotal = 0;
+        for (int i = 0; i < 24; ++i)
+        {
+            const auto p = PatternValidator::validate (LoopGenerator::generate (
+                LoopGenerator::deriveSeed (2468, i), s));
+            for (const auto& e : p.events)
+            {
+                if (e.roll)
+                    continue;
+                const int step = juce::roundToInt (std::floor (e.pos)) % 4;
+                if (std::abs (e.pos - std::round (e.pos)) > 0.01)
+                    continue;
+                if (step == 0) { beatVel += e.velocity; ++beatN; }
+                if (step == 1) { eVel += e.velocity; ++eN; }
+                if (e.velocity <= 0.28f)
+                    ++ghosts;
+                // Family feel: at r=0 every non-anchor HIGH sits exactly
+                // highFeelMs behind the grid.
+                if (! e.protectedAnchor && e.role == Role::HIGH)
+                {
+                    ++laidBackTotal;
+                    if (std::abs (e.microMs - 3.0f) < 0.01f)
+                        ++laidBackOk;
+                }
+            }
+        }
+        check (beatN > 0 && eN > 0, "groove test has data on beats and e's");
+        check (eVel / juce::jmax (1, eN) < beatVel / juce::jmax (1, beatN) * 0.85,
+               "accent map ducks the e's under the beats");
+        check (ghosts >= 24, "designed ghost layer puts quiet ticks in the pocket");
+        check (laidBackTotal > 0 && laidBackOk == laidBackTotal,
+               "EDM hats sit laid back by the family feel");
+
+        // Melodic-techno rolling cell is reachable: choked low ghosts offbeat.
+        int rollingSeeds = 0;
+        for (int i = 0; i < 60; ++i)
+        {
+            const auto p = PatternValidator::validate (LoopGenerator::generate (
+                LoopGenerator::deriveSeed (13579, i), s));
+            for (const auto& e : p.events)
+                if (e.role == Role::LOW && e.gateSteps >= 1.0 && e.velocity < 0.6f)
+                {
+                    ++rollingSeeds;
+                    break;
+                }
+        }
+        check (rollingSeeds >= 4, "melodic rolling skeleton appears in the pool");
+    }
+
     // --- variation preserves the motif ---------------------------------------------
     {
         // Same motif seed + different ornament seeds = same groove, another

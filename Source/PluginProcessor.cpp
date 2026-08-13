@@ -125,11 +125,44 @@ void OrchaAudioProcessor::regenerateOption (int index)
                              ^ (juce::uint64) juce::Time::getHighResolutionTicks();
     auto& opt = options[(size_t) index];
     // Same groove, another take: the motif seed survives, only the
-    // ornament seed re-rolls. A never-generated card starts from scratch.
+    // ornament seed re-rolls. A never-generated card starts from scratch,
+    // and manual edits make way for the fresh take.
     pendingSeeds[(size_t) index] = {
         opt.present ? opt.pattern.seed : LoopGenerator::deriveSeed (fresh, index),
         LoopGenerator::deriveSeed (~fresh, index) };
     opt.ready = false;
+    opt.edited = false;
+    enqueueBuild ({ index });
+}
+
+void OrchaAudioProcessor::applyEditedPattern (int index, Pattern edited)
+{
+    if (index < 0 || index >= numOptions || ! options[(size_t) index].present)
+        return;
+
+    // Light cleanup only - no DROP-downbeat insertion, no BREAK thinning:
+    // the user's word is final here, silence included.
+    const double lastAllowed = edited.stepCount() - 0.25;
+    edited.events.erase (std::remove_if (edited.events.begin(), edited.events.end(),
+        [lastAllowed] (const Event& e)
+        { return e.pos < 0.0 || e.pos > lastAllowed || e.velocity <= 0.0f; }),
+        edited.events.end());
+    std::sort (edited.events.begin(), edited.events.end(),
+               [] (const Event& a, const Event& b) { return a.pos < b.pos; });
+
+    auto& opt = options[(size_t) index];
+    opt.pattern = std::move (edited);
+    opt.edited = true;
+    opt.ready = false;
+    enqueueBuild ({ index });
+}
+
+void OrchaAudioProcessor::resetOptionEdits (int index)
+{
+    if (index < 0 || index >= numOptions || ! options[(size_t) index].edited)
+        return;
+    options[(size_t) index].edited = false;
+    options[(size_t) index].ready = false;
     enqueueBuild ({ index });
 }
 
@@ -145,6 +178,8 @@ void OrchaAudioProcessor::enqueueBuild (std::vector<int> indices)
         int index;
         SeedPair seeds;
         juce::String name;
+        bool useExisting = false;   // edited pattern: render as-is, no generate
+        Pattern existing;
     };
     std::vector<BuildInput> inputs;
     for (int i : indices)
@@ -152,7 +187,14 @@ void OrchaAudioProcessor::enqueueBuild (std::vector<int> indices)
         juce::String name;
         name << modeName (settings.mode) << ' '
              << juce::String (i + 1).paddedLeft ('0', 2);
-        inputs.push_back ({ i, pendingSeeds[(size_t) i], name });
+        BuildInput in { i, pendingSeeds[(size_t) i], name, false, {} };
+        if (options[(size_t) i].edited)
+        {
+            in.useExisting = true;
+            in.existing = options[(size_t) i].pattern;
+            in.name = in.existing.name.isNotEmpty() ? in.existing.name : name;
+        }
+        inputs.push_back (std::move (in));
     }
 
     // Signatures the new batch must differ from: kept favorites that are NOT
@@ -190,21 +232,30 @@ void OrchaAudioProcessor::enqueueBuild (std::vector<int> indices)
             if (generation.load() != gen)
                 break;
 
-            // Reseed until this option differs meaningfully from everything
-            // already on screen - "12 clearly different results" is a promise.
-            // Only the ornament seed re-rolls, so a variation request never
-            // loses its motif to the diversity check.
-            juce::uint64 orn = in.seeds.orn;
             Pattern pattern;
-            for (int attempt = 0; attempt < 8; ++attempt)
+            if (in.useExisting)
             {
-                pattern = PatternValidator::validate (
-                    LoopGenerator::generate (in.seeds.motif, orn, settingsCopy));
-                if (! existingSigs.contains (pattern.signature()))
-                    break;
-                orn = LoopGenerator::deriveSeed (orn, 7777 + attempt);
+                // A user edit renders exactly as edited - no generation, no
+                // diversity reseed, no validator second-guessing.
+                pattern = in.existing;
             }
-            existingSigs.add (pattern.signature());
+            else
+            {
+                // Reseed until this option differs meaningfully from everything
+                // already on screen - "12 clearly different results" is a
+                // promise. Only the ornament seed re-rolls, so a variation
+                // request never loses its motif to the diversity check.
+                juce::uint64 orn = in.seeds.orn;
+                for (int attempt = 0; attempt < 8; ++attempt)
+                {
+                    pattern = PatternValidator::validate (
+                        LoopGenerator::generate (in.seeds.motif, orn, settingsCopy));
+                    if (! existingSigs.contains (pattern.signature()))
+                        break;
+                    orn = LoopGenerator::deriveSeed (orn, 7777 + attempt);
+                }
+                existingSigs.add (pattern.signature());
+            }
             pattern.name = in.name;
 
             auto loop = PreviewPlayer::Loop::Ptr (new PreviewPlayer::Loop());
@@ -215,11 +266,16 @@ void OrchaAudioProcessor::enqueueBuild (std::vector<int> indices)
             const auto wav = RenderCache::write (loop->buffer, pattern, ctx.bpm, ctx.sampleRate);
 
             const int index = in.index;
-            juce::MessageManager::callAsync ([self, index, pattern, loop, wav, gen]
+            const bool fromEdit = in.useExisting;
+            juce::MessageManager::callAsync ([self, index, pattern, loop, wav, gen, fromEdit]
             {
                 if (self == nullptr || self->generation.load() != gen)
                     return;
                 auto& opt = self->options[(size_t) index];
+                // A generated result must never clobber an edit the user made
+                // while the batch was still in flight.
+                if (opt.edited && ! fromEdit)
+                    return;
                 opt.pattern = pattern;
                 opt.loop = loop;
                 opt.wavFile = wav;
@@ -400,6 +456,32 @@ void OrchaAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
                                            : juce::String (modeName (settings.mode)) + " "
                                              + juce::String (i + 1).paddedLeft ('0', 2), nullptr);
         v.setProperty ("favorite", opt.favorite, nullptr);
+
+        // A user-edited pattern cannot be rebuilt from seeds - store it whole.
+        if (opt.edited)
+        {
+            v.setProperty ("edited", true, nullptr);
+            v.setProperty ("swing", opt.pattern.swing, nullptr);
+            v.setProperty ("bars", opt.pattern.settings.bars, nullptr);
+            v.setProperty ("emode", modeName (opt.pattern.settings.mode), nullptr);
+            v.setProperty ("efamily", familyName (opt.pattern.settings.family), nullptr);
+            for (const auto& e : opt.pattern.events)
+            {
+                juce::ValueTree ev ("e");
+                ev.setProperty ("p", e.pos, nullptr);
+                ev.setProperty ("r", (int) e.role, nullptr);
+                ev.setProperty ("v", e.velocity, nullptr);
+                ev.setProperty ("m", e.microMs, nullptr);
+                ev.setProperty ("ps", e.pitchSemis, nullptr);
+                ev.setProperty ("g", e.gateSteps, nullptr);
+                ev.setProperty ("a", e.protectedAnchor, nullptr);
+                if (e.reverse)
+                    ev.setProperty ("rev", true, nullptr);
+                if (e.roll)
+                    ev.setProperty ("roll", true, nullptr);
+                v.appendChild (ev, nullptr);
+            }
+        }
         os.appendChild (v, nullptr);
     }
     root.appendChild (os, nullptr);
@@ -453,6 +535,38 @@ void OrchaAudioProcessor::setStateInformation (const void* data, int sizeInBytes
                 : LoopGenerator::deriveSeed (motif, 4242);
             pendingSeeds[(size_t) i] = { motif, orn };
             options[(size_t) i].favorite = v.getProperty ("favorite", false);
+
+            if ((bool) v.getProperty ("edited", false))
+            {
+                Pattern p;
+                p.seed = motif;
+                p.ornamentSeed = orn;
+                p.name = v.getProperty ("name", "");
+                p.swing = v.getProperty ("swing", 0.0);
+                p.settings = settings;
+                p.settings.bars = juce::jlimit (1, 4, (int) v.getProperty ("bars", 1));
+                const juce::String em = v.getProperty ("emode", "DROP");
+                p.settings.mode = em == "BREAK" ? Mode::BREAK : em == "BUILD" ? Mode::BUILD
+                                : em == "GROOVE" ? Mode::GROOVE : Mode::DROP;
+                for (const auto& ev : v)
+                {
+                    if (! ev.hasType ("e"))
+                        continue;
+                    Event e;
+                    e.pos = ev.getProperty ("p", 0.0);
+                    e.role = (Role) juce::jlimit (0, 4, (int) ev.getProperty ("r", 1));
+                    e.velocity = (float) (double) ev.getProperty ("v", 0.7);
+                    e.microMs = (float) (double) ev.getProperty ("m", 0.0);
+                    e.pitchSemis = ev.getProperty ("ps", 0);
+                    e.gateSteps = ev.getProperty ("g", 0.0);
+                    e.protectedAnchor = ev.getProperty ("a", false);
+                    e.reverse = ev.getProperty ("rev", false);
+                    e.roll = ev.getProperty ("roll", false);
+                    p.events.push_back (e);
+                }
+                options[(size_t) i].pattern = std::move (p);
+                options[(size_t) i].edited = true;
+            }
         }
 
     for (auto& s : samples)

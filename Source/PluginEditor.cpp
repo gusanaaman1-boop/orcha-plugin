@@ -6,7 +6,7 @@ namespace orcha
 {
 
 OrchaAudioProcessorEditor::OrchaAudioProcessorEditor (OrchaAudioProcessor& p)
-    : juce::AudioProcessorEditor (p), processor (p)
+    : juce::AudioProcessorEditor (p), processor (p), editPanel (p)
 {
     setLookAndFeel (&lookAndFeel);
 
@@ -45,9 +45,11 @@ OrchaAudioProcessorEditor::OrchaAudioProcessorEditor (OrchaAudioProcessor& p)
         card->onRegenerate = [this, i] { processor.regenerateOption (i); };
         card->getDragFile = [this, i] { return processor.ensureWavFor (i); };
         card->getMidiDragFile = [this, i] { return processor.ensureMidiFor (i); };
+        card->onEdit = [this, i] { editPanel.openFor (i); };
         addAndMakeVisible (*card);
         optionCards[(size_t) i] = std::move (card);
     }
+    addChildComponent (editPanel);
 
     generateMoreButton.onClick = [this]
     {
@@ -105,6 +107,7 @@ void OrchaAudioProcessorEditor::refresh()
     strip.setGenerateEnabled (canGenerate && ! processor.isGenerating(),
                               processor.isGenerating());
     generateMoreButton.setEnabled (canGenerate && ! processor.isGenerating());
+    editPanel.refreshFromModel();
 }
 
 void OrchaAudioProcessorEditor::timerCallback()
@@ -164,6 +167,7 @@ void OrchaAudioProcessorEditor::resized()
     generateMoreButton.setBounds (bottom);
 
     auto grid = area.reduced (12, 2);
+    editPanel.setBounds (grid);         // the step editor covers the grid
     const int cols = 4, rows = 3;
     const int w = grid.getWidth() / cols, h = grid.getHeight() / rows;
     for (int i = 0; i < OrchaAudioProcessor::numOptions; ++i)

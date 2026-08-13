@@ -11,6 +11,12 @@ static StyleInfo makeEdm()
     StyleInfo s;
     s.fourFloorAnchor = true;
     s.ornamentDensity = 0.45f;
+    // The club pocket: beats land, "e"s duck, the last 16th pushes into the
+    // next bar. Hats sit a touch behind the kick.
+    s.accentMap = { 1.00f, 0.70f, 0.90f, 0.78f, 0.95f, 0.70f, 0.88f, 0.80f,
+                    1.00f, 0.70f, 0.90f, 0.78f, 0.95f, 0.72f, 0.88f, 0.96f };
+    s.highFeelMs = 3.0f;
+    s.ghostiness = 0.6f;
     s.skeletons = {
         { "four_floor", {
             { 0, Role::LOW, 1.0f }, { 4, Role::LOW, 0.9f }, { 8, Role::LOW, 1.0f }, { 12, Role::LOW, 0.9f },
@@ -37,7 +43,22 @@ static StyleInfo makeEdm()
         { "hard_techno", {
             { 0, Role::LOW, 1.0f }, { 4, Role::LOW, 1.0f }, { 8, Role::LOW, 1.0f }, { 12, Role::LOW, 1.0f },
             { 2, Role::HIGH, 0.7f }, { 6, Role::HIGH, 0.7f }, { 10, Role::HIGH, 0.7f }, { 14, Role::HIGH, 0.7f } },
-          0.0, { 3, 7, 11, 15 } } };
+          0.0, { 3, 7, 11, 15 } },
+        // Melodic techno rolling: the floor plus choked LOW ghosts on every
+        // offbeat 8th - the pumping "rolling bass" cell of the genre.
+        { "melodic_rolling", {
+            { 0, Role::LOW, 1.0f }, { 4, Role::LOW, 0.9f }, { 8, Role::LOW, 0.95f }, { 12, Role::LOW, 0.9f },
+            { 2, Role::LOW, 0.35f }, { 6, Role::LOW, 0.35f }, { 10, Role::LOW, 0.35f }, { 14, Role::LOW, 0.38f },
+            { 8, Role::MID, 0.7f },
+            { 2, Role::HIGH, 0.5f }, { 6, Role::HIGH, 0.5f }, { 10, Role::HIGH, 0.5f }, { 14, Role::HIGH, 0.5f } },
+          0.03, { 3, 7, 11, 15 } },
+        // Hypnotic ride line: floor under alternating-weight HIGH 8ths.
+        { "hypnotic_ride", {
+            { 0, Role::LOW, 1.0f }, { 4, Role::LOW, 0.9f }, { 8, Role::LOW, 1.0f }, { 12, Role::LOW, 0.9f },
+            { 0, Role::HIGH, 0.6f }, { 2, Role::HIGH, 0.42f }, { 4, Role::HIGH, 0.58f }, { 6, Role::HIGH, 0.42f },
+            { 8, Role::HIGH, 0.6f }, { 10, Role::HIGH, 0.42f }, { 12, Role::HIGH, 0.58f }, { 14, Role::HIGH, 0.45f },
+            { 14, Role::MID, 0.55f } },
+          0.0, { 1, 5, 9, 13 } } };
     return s;
 }
 
@@ -45,6 +66,11 @@ static StyleInfo makeArabic()
 {
     StyleInfo s;
     s.ornamentDensity = 0.55f;
+    // DUM positions carry the weight; the ka ornaments trail a touch late.
+    s.accentMap = { 1.00f, 0.74f, 0.86f, 0.80f, 0.90f, 0.72f, 0.94f, 0.80f,
+                    1.00f, 0.74f, 0.86f, 0.80f, 0.95f, 0.75f, 0.90f, 0.85f };
+    s.highFeelMs = 2.0f;
+    s.ghostiness = 0.55f;
     s.skeletons = {
         // Maqsum: D T - T | D - T -
         { "maqsum", {
@@ -93,6 +119,10 @@ static StyleInfo makeMediterranean()
 {
     StyleInfo s;
     s.ornamentDensity = 0.6f;
+    s.accentMap = { 1.00f, 0.74f, 0.88f, 0.80f, 0.92f, 0.72f, 0.92f, 0.80f,
+                    1.00f, 0.74f, 0.88f, 0.80f, 0.95f, 0.75f, 0.90f, 0.90f };
+    s.highFeelMs = 2.0f;
+    s.ghostiness = 0.55f;
     s.skeletons = {
         // Maqsum frame over a dance-floor pulse; answers live in the back half.
         { "med_maqsum_drive", {
@@ -126,6 +156,12 @@ static StyleInfo makeAfro()
     StyleInfo s;
     s.interlocking = true;
     s.ornamentDensity = 0.5f;
+    // Weight lives on the clave points (3, 6, 10), not the grid; the MID
+    // layer pushes slightly ahead - the forward lean of the style.
+    s.accentMap = { 1.00f, 0.75f, 0.82f, 0.95f, 0.85f, 0.80f, 0.95f, 0.76f,
+                    0.90f, 0.75f, 0.95f, 0.78f, 0.92f, 0.80f, 0.85f, 0.88f };
+    s.midFeelMs = -2.0f;
+    s.ghostiness = 0.55f;
     s.skeletons = {
         // Son-clave-derived key pattern with interlocking low tumbao.
         { "clave_32", {
@@ -164,6 +200,10 @@ static StyleInfo makeHybrid()
     StyleInfo s;
     s.fourFloorAnchor = true;
     s.ornamentDensity = 0.55f;
+    s.accentMap = { 1.00f, 0.72f, 0.90f, 0.80f, 0.95f, 0.72f, 0.90f, 0.80f,
+                    1.00f, 0.72f, 0.90f, 0.80f, 0.95f, 0.74f, 0.88f, 0.94f };
+    s.highFeelMs = 2.5f;
+    s.ghostiness = 0.58f;
     s.skeletons = {
         // EDM anchor + maqsum TAK line: one intentional groove, not a mashup.
         { "hybrid_maqsum_floor", {

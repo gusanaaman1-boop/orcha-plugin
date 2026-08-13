@@ -28,6 +28,17 @@ struct StyleInfo
     float ornamentDensity = 0.5f;   // how busy the style is between anchors
     bool  fourFloorAnchor = false;  // LOW is locked to every beat
     bool  interlocking = false;     // AFRO: secondary events avoid anchor steps
+
+    // The groove layer. accentMap is the cyclic weight of each 16th position -
+    // the difference between a grid and a pocket. Feel offsets lay a role
+    // back (+ms) or push it (-ms); ghostiness scales the designed ghost-note
+    // layer between the written hits.
+    std::array<float, 16> accentMap {
+        1.0f, 0.8f, 0.9f, 0.8f, 0.95f, 0.8f, 0.9f, 0.8f,
+        1.0f, 0.8f, 0.9f, 0.8f, 0.95f, 0.8f, 0.9f, 0.85f };
+    float highFeelMs = 0.0f;
+    float midFeelMs = 0.0f;
+    float ghostiness = 0.5f;
 };
 
 namespace RhythmStyle

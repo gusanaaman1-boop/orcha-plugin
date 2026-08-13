@@ -6,7 +6,7 @@ if(APPLE)
     set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "" FORCE)
 endif()
 
-project(Orcha VERSION 0.3.0 LANGUAGES C CXX)
+project(Orcha VERSION 0.4.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -98,7 +98,8 @@ set(ORCHA_PLUGIN_SOURCES
     Source/Ui/Theme.cpp
     Source/Ui/SampleCard.cpp
     Source/Ui/GenerationStrip.cpp
-    Source/Ui/OptionCard.cpp)
+    Source/Ui/OptionCard.cpp
+    Source/Ui/PatternEditPanel.cpp)
 
 set(ORCHA_OWN_SOURCES ${ORCHA_PLUGIN_SOURCES} Source/Tools/test_engine.cpp
     Source/Tools/screenshot_tool.cpp Source/Tools/audition_tool.cpp)

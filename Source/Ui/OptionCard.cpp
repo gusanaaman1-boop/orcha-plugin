@@ -38,12 +38,17 @@ juce::Rectangle<float> OptionCard::regenArea() const
 
 juce::Rectangle<float> OptionCard::dragArea() const
 {
-    return { (float) getWidth() - 76.0f, (float) getHeight() - 26.0f, 68.0f, 20.0f };
+    return { (float) getWidth() - 64.0f, (float) getHeight() - 26.0f, 56.0f, 20.0f };
 }
 
 juce::Rectangle<float> OptionCard::midiArea() const
 {
-    return { (float) getWidth() - 122.0f, (float) getHeight() - 26.0f, 42.0f, 20.0f };
+    return { (float) getWidth() - 104.0f, (float) getHeight() - 26.0f, 36.0f, 20.0f };
+}
+
+juce::Rectangle<float> OptionCard::editArea() const
+{
+    return { (float) getWidth() - 144.0f, (float) getHeight() - 26.0f, 36.0f, 20.0f };
 }
 
 void OptionCard::paint (juce::Graphics& g)
@@ -100,7 +105,8 @@ void OptionCard::paint (juce::Graphics& g)
     g.setColour (theme::text);
     g.setFont (theme::heading (13.0f));
     g.drawText (name, juce::Rectangle<float> (12.0f, (float) getHeight() - 26.0f,
-                                              120.0f, 18.0f),
+                                              juce::jmax (50.0f, (float) getWidth() - 160.0f),
+                                              18.0f),
                 juce::Justification::centredLeft);
 
     // Favorite heart.
@@ -142,6 +148,18 @@ void OptionCard::paint (juce::Graphics& g)
         g.fillPath (head, juce::AffineTransform::rotation (0.6f)
                         .translated (c.x + radius * std::sin (0.6f),
                                      c.y - radius * std::cos (0.6f)));
+    }
+
+    // EDIT chip: opens the per-option step editor.
+    {
+        auto ea = editArea();
+        g.setColour (theme::panelLight.withAlpha (0.8f));
+        g.fillRoundedRectangle (ea, 4.0f);
+        g.setColour (theme::outline);
+        g.drawRoundedRectangle (ea, 4.0f, 1.0f);
+        g.setColour (ready ? theme::text : theme::textDim);
+        g.setFont (theme::heading (10.0f));
+        g.drawText ("EDIT", ea, juce::Justification::centred);
     }
 
     // MIDI drag handle: same gesture, lands as editable notes instead of audio.
@@ -187,6 +205,7 @@ void OptionCard::mouseUp (const juce::MouseEvent& e)
     if (playArea().contains (pos) && ready)          { if (onPlay) onPlay(); }
     else if (heartArea().expanded (3.0f).contains (pos)) { if (onFavorite) onFavorite(); }
     else if (regenArea().expanded (3.0f).contains (pos)) { if (onRegenerate) onRegenerate(); }
+    else if (editArea().contains (pos) && ready)     { if (onEdit) onEdit(); }
 }
 
 void OptionCard::mouseDrag (const juce::MouseEvent& e)
@@ -198,7 +217,8 @@ void OptionCard::mouseDrag (const juce::MouseEvent& e)
     // not from the play/favorite/regenerate hotspots.
     if (playArea().contains (e.mouseDownPosition)
         || heartArea().contains (e.mouseDownPosition)
-        || regenArea().contains (e.mouseDownPosition))
+        || regenArea().contains (e.mouseDownPosition)
+        || editArea().contains (e.mouseDownPosition))
         return;
 
     // A drag that begins on the MIDI chip carries the .mid; anywhere else

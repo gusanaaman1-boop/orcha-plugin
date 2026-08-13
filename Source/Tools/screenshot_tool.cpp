@@ -82,6 +82,13 @@ int main (int argc, char* argv[])
         pumpUntil ([] { return false; }, 300);   // let repaints land
         shoot ("03-generated.png");
 
+        if (auto* orchaEditor = dynamic_cast<OrchaAudioProcessorEditor*> (editor.get()))
+        {
+            orchaEditor->openEditPanelFor (2);
+            pumpUntil ([] { return false; }, 200);
+            shoot ("04-edit-panel.png");
+        }
+
         // --- state round-trip: seeds, favorites, settings must survive ---------
         processor->toggleFavorite (2);
         processor->toggleFavorite (7);
@@ -129,6 +136,39 @@ int main (int argc, char* argv[])
         {
             std::cout << "STATE FAIL: settings mismatch\n";
             ++failures;
+        }
+
+        // --- edited pattern round-trip -----------------------------------------
+        // A manual edit must survive save/restore verbatim, not be regenerated.
+        {
+            auto edited = processor->option (0).pattern;
+            Event extra;
+            extra.pos = 3.0;
+            extra.role = Role::HIGH;
+            extra.velocity = 0.42f;
+            edited.events.push_back (extra);
+            processor->applyEditedPattern (0, edited);
+            pumpUntil ([&] { return processor->option (0).ready; }, 15000);
+
+            juce::MemoryBlock editState;
+            processor->getStateInformation (editState);
+            auto restored2 = std::make_unique<OrchaAudioProcessor>();
+            restored2->prepareToPlay (48000.0, 512);
+            restored2->setStateInformation (editState.getData(), (int) editState.getSize());
+            pumpUntil ([&] { return restored2->option (0).ready; }, 30000);
+
+            if (! restored2->option (0).edited)
+            {
+                std::cout << "STATE FAIL: edited flag lost\n";
+                ++failures;
+            }
+            if (restored2->option (0).pattern.signature()
+                    != processor->option (0).pattern.signature())
+            {
+                std::cout << "STATE FAIL: edited pattern not restored verbatim\n";
+                ++failures;
+            }
+            restored2.reset();
         }
 
         std::cout << (failures == 0 ? "STATE OK" : "STATE FAILED") << "\n";
