@@ -431,13 +431,15 @@ Pattern LoopGenerator::generateV2 (juce::uint64 motifSeed, juce::uint64 ornament
 
 Pattern LoopGenerator::generateV2 (juce::uint64 motifSeed, juce::uint64 ornamentSeed,
                                    const GeneratorSettings& settings,
-                                   const TraitsByRole& traits)
+                                   const TraitsByRole& traits,
+                                   Destination destination)
 {
     Pattern p;
     p.seed = motifSeed;
     p.ornamentSeed = ornamentSeed;
     p.settings = settings;
     p.algo = 2;
+    p.destination = destination;
 
     Rng rngM (motifSeed);
     Rng rng (ornamentSeed);
@@ -757,11 +759,25 @@ Pattern LoopGenerator::generateV2 (juce::uint64 motifSeed, juce::uint64 ornament
             e.pitchSemis = -1;
         if (! e.protectedAnchor)
         {
-            e.microMs = (rng.uni() * 2.0f - 1.0f) * 3.0f * r;
+            // Correlated performance, not blind jitter (Phase 6). Everything
+            // scales with randomness x the family's looseness, so r=0 stays
+            // machine-tight (feel offsets only) and psytrance never loosens.
+            const float human = r * feel.looseness * 2.0f;
+            float micro = (rng.uni() * 2.0f - 1.0f) * style.timingVarianceMs * human;
+            // Slow breathing across the phrase - deterministic in position.
+            micro += std::sin ((float) (e.pos / steps)
+                               * juce::MathConstants<float>::twoPi)
+                     * style.driftMs * human;
+            // Velocity/timing correlation: confident hits arrive a touch
+            // early, ghosts hang behind.
+            micro -= (e.velocity - 0.5f) * style.velTimingCorrMs * r;
+            if (e.velocity <= 0.28f)
+                micro += style.ghostLagMs * human;
             if (e.role == Role::HIGH)
-                e.microMs += style.highFeelMs;
+                micro += style.highFeelMs;
             else if (e.role == Role::MID)
-                e.microMs += style.midFeelMs;
+                micro += style.midFeelMs;
+            e.microMs = juce::jlimit (-12.0f, 12.0f, micro);
         }
     }
 
@@ -902,6 +918,64 @@ Pattern LoopGenerator::generateV2 (juce::uint64 motifSeed, juce::uint64 ornament
             e.velocity = 0.3f + 0.2f * rng.uni();
             e.gateSteps = 0.5;
             p.events.push_back (e);
+        }
+    }
+
+    // --- 9b. destination-aware endings (Phase 7) --------------------------------
+    // A fill must know where it is going. LoopBack keeps the plan's ending;
+    // the transitions rewrite the last beat with their own grammar.
+    switch (destination)
+    {
+        case Destination::LoopBack:
+            break;
+        case Destination::ToDrop:
+        {
+            // Throw INTO the next section: an accented pickup on the last
+            // 16th, always - the ending must promise the impact.
+            Event pickup;
+            pickup.pos = steps - 1.0;
+            pickup.role = Role::LOW;
+            pickup.velocity = 1.0f;
+            pickup.protectedAnchor = true;
+            if (! hasEventAt (p.events, pickup.pos, Role::LOW))
+                p.events.push_back (pickup);
+            break;
+        }
+        case Destination::ToBreak:
+        {
+            // Deflate: the decoration leaves the last two steps, and a
+            // reverse swell (if the sample can carry it) pulls the air open.
+            p.events.erase (std::remove_if (p.events.begin(), p.events.end(),
+                [steps] (const Event& e)
+                { return e.pos >= steps - 2.0 && ! e.protectedAnchor; }),
+                p.events.end());
+            if (! traits[(size_t) Role::HIGH].weakTransient
+                && rng.chance (0.8f))
+            {
+                Event swell;
+                swell.pos = steps - 3.75;
+                swell.role = Role::HIGH;
+                swell.reverse = true;
+                swell.gateSteps = 3.45;
+                swell.velocity = 0.55f;
+                p.events.push_back (swell);
+            }
+            break;
+        }
+        case Destination::ToStop:
+        {
+            // The intentional stop: one final accent, then nothing.
+            p.events.erase (std::remove_if (p.events.begin(), p.events.end(),
+                [steps] (const Event& e) { return e.pos >= steps - 4.0; }),
+                p.events.end());
+            Event last;
+            last.pos = steps - 4.0;
+            last.role = Role::LOW;
+            last.velocity = 1.0f;
+            last.gateSteps = 3.0;
+            last.protectedAnchor = true;
+            p.events.push_back (last);
+            break;
         }
     }
 

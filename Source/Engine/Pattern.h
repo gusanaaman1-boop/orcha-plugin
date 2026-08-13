@@ -114,6 +114,11 @@ struct RoleMap
     }
 };
 
+// Where a loop is headed when it ends (Engine 2.0 Phase 7). Internal - no
+// UI control; fresh batches assign transition destinations to a few cards
+// so the 12 cover returns, throws and stops.
+enum class Destination { LoopBack = 0, ToDrop, ToBreak, ToStop };
+
 // A generated loop, fully determined by (seed, ornamentSeed, settings).
 // Two seeds on purpose: `seed` decides the MOTIF (skeleton, lead role,
 // anchors - the loop's character) and `ornamentSeed` decides everything
@@ -126,6 +131,7 @@ struct Pattern
     // Which generator produced this. Old projects restore through the frozen
     // v1 path bit-for-bit; new generations use v2. Never migrates silently.
     int algo = 1;
+    Destination destination = Destination::LoopBack;
     GeneratorSettings settings;
     juce::String name;          // "DROP 01"
     double swing = 0.0;         // 0..1 of a 16th, applied to odd steps

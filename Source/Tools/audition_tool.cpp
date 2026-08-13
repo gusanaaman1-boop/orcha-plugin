@@ -58,9 +58,15 @@ int main (int argc, char* argv[])
 
             const auto seed = LoopGenerator::deriveSeed (
                 20260813, (int) family * 16 + (int) mode);
+            // The listening set hears ENGINE 2; a legacy/ twin of every file
+            // renders the SAME seeds through the frozen v1 for direct A/B.
             const auto pattern = PatternValidator::validate (
-                LoopGenerator::generate (seed, s));
+                LoopGenerator::generateV2 (seed,
+                    LoopGenerator::deriveSeed (seed, 4242), s));
             auto buffer = LoopRenderer::render (pattern, ctx);
+            const auto legacy = PatternValidator::validate (
+                LoopGenerator::generate (seed, s));
+            auto legacyBuffer = LoopRenderer::render (legacy, ctx);
 
             // Two loop cycles per file, so the seam is audible.
             juce::AudioBuffer<float> twice (2, buffer.getNumSamples() * 2);
@@ -85,6 +91,30 @@ int main (int argc, char* argv[])
             stream.release();
             writer->writeFromAudioSampleBuffer (twice, 0, twice.getNumSamples());
             ++written;
+
+            // Legacy A/B twin.
+            const auto legacyDir = outDir.getChildFile ("legacy");
+            legacyDir.createDirectory();
+            juce::AudioBuffer<float> ltwice (2, legacyBuffer.getNumSamples() * 2);
+            for (int ch = 0; ch < 2; ++ch)
+            {
+                ltwice.copyFrom (ch, 0, legacyBuffer, ch, 0, legacyBuffer.getNumSamples());
+                ltwice.copyFrom (ch, legacyBuffer.getNumSamples(), legacyBuffer, ch, 0,
+                                 legacyBuffer.getNumSamples());
+            }
+            const auto lfile = legacyDir.getChildFile (file.getFileName());
+            lfile.deleteFile();
+            std::unique_ptr<juce::FileOutputStream> lstream (lfile.createOutputStream());
+            if (lstream != nullptr)
+            {
+                std::unique_ptr<juce::AudioFormatWriter> lwriter (
+                    wav.createWriterFor (lstream.get(), sr, 2, 24, {}, 0));
+                if (lwriter != nullptr)
+                {
+                    lstream.release();
+                    lwriter->writeFromAudioSampleBuffer (ltwice, 0, ltwice.getNumSamples());
+                }
+            }
         }
 
     std::cout << "wrote " << written << " audition loops to "

@@ -1514,6 +1514,116 @@ int main()
                "scores stay inspectable");
     }
 
+    // === ENGINE 2 / PHASE 6: correlated performance ================================
+    {
+        GeneratorSettings s;
+        s.mode = Mode::GROOVE;
+        s.family = Family::EDM;
+        s.randomness = 0.8f;
+        double accentMicro = 0.0, ghostMicro = 0.0;
+        int aN = 0, gN = 0;
+        float maxAbs = 0.0f;
+        for (int i = 0; i < 24; ++i)
+        {
+            const auto p = PatternValidator::validate (LoopGenerator::generateV2 (
+                LoopGenerator::deriveSeed (61001, i),
+                LoopGenerator::deriveSeed (61002, i), s));
+            for (const auto& e : p.events)
+            {
+                if (e.protectedAnchor)
+                    continue;
+                maxAbs = juce::jmax (maxAbs, std::abs (e.microMs));
+                if (e.role != Role::HIGH)
+                    continue;
+                if (e.velocity >= 0.55f) { accentMicro += e.microMs; ++aN; }
+                if (e.velocity <= 0.28f) { ghostMicro += e.microMs; ++gN; }
+            }
+        }
+        check (aN > 10 && gN > 10, "performance test has accents and ghosts");
+        check (ghostMicro / juce::jmax (1, gN) > accentMicro / juce::jmax (1, aN),
+               "confident hits arrive earlier, ghosts hang behind");
+        check (maxAbs <= 12.001f, "human timing stays bounded");
+
+        // Psytrance stays surgical even at maximum randomness.
+        s.family = Family::PSYTRANCE;
+        s.randomness = 1.0f;
+        float psyMax = 0.0f;
+        for (int i = 0; i < 12; ++i)
+        {
+            const auto p = PatternValidator::validate (LoopGenerator::generateV2 (
+                LoopGenerator::deriveSeed (62001, i),
+                LoopGenerator::deriveSeed (62002, i), s));
+            for (const auto& e : p.events)
+                if (! e.protectedAnchor)
+                    psyMax = juce::jmax (psyMax, std::abs (e.microMs));
+        }
+        check (psyMax <= 1.0f, "psytrance core precision survives max randomness");
+    }
+
+    // === ENGINE 2 / PHASE 7: destination-aware endings =============================
+    {
+        GeneratorSettings s;
+        s.mode = Mode::GROOVE;
+        s.bars = 2;
+        const TraitsByRole none {};
+        auto gen = [&] (Destination d, int i)
+        {
+            return PatternValidator::validate (LoopGenerator::generateV2 (
+                LoopGenerator::deriveSeed (71001, i),
+                LoopGenerator::deriveSeed (71002, i), s, none, d));
+        };
+
+        int stopsClean = 0, dropsThrow = 0, breaksDeflate = 0, breakSwells = 0;
+        for (int i = 0; i < 12; ++i)
+        {
+            const auto pStop = gen (Destination::ToStop, i);
+            bool tailEmpty = true;
+            bool finalAccent = false;
+            for (const auto& e : pStop.events)
+            {
+                if (e.pos > 28.26)
+                    tailEmpty = false;
+                if (std::abs (e.pos - 28.0) < 0.26 && e.velocity >= 0.99f)
+                    finalAccent = true;
+            }
+            if (tailEmpty && finalAccent)
+                ++stopsClean;
+
+            const auto pDrop = gen (Destination::ToDrop, i);
+            for (const auto& e : pDrop.events)
+                if (std::abs (e.pos - 31.0) < 0.26 && e.role == Role::LOW
+                    && e.velocity >= 0.99f)
+                {
+                    ++dropsThrow;
+                    break;
+                }
+
+            const auto pBreak = gen (Destination::ToBreak, i);
+            bool deflated = true;
+            for (const auto& e : pBreak.events)
+            {
+                if (e.pos >= 30.0 && ! e.protectedAnchor && ! e.reverse)
+                    deflated = false;
+                if (e.reverse)
+                    ++breakSwells;
+            }
+            if (deflated)
+                ++breaksDeflate;
+
+            // Determinism per destination.
+            check (gen (Destination::ToStop, i).signature()
+                       == pStop.signature(),
+                   "destination endings are deterministic");
+        }
+        check (stopsClean == 12, "ToStop: one final accent, then nothing");
+        check (dropsThrow == 12, "ToDrop: the pickup always promises the impact");
+        check (breaksDeflate == 12, "ToBreak: the tail deflates");
+        check (breakSwells >= 6, "ToBreak: the reverse swell usually pulls in");
+        check (gen (Destination::ToStop, 0).signature()
+                   != gen (Destination::LoopBack, 0).signature(),
+               "different destinations produce different endings");
+    }
+
     std::cout << (failures == 0 ? "ALL OK" : "FAILED") << " - "
               << checks << " checks, " << failures << " failures\n";
     return failures == 0 ? 0 : 1;

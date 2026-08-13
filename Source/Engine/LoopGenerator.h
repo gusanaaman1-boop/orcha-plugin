@@ -30,7 +30,8 @@ namespace LoopGenerator
     // same pattern.
     Pattern generateV2 (juce::uint64 motifSeed, juce::uint64 ornamentSeed,
                         const GeneratorSettings& settings,
-                        const TraitsByRole& traits);
+                        const TraitsByRole& traits,
+                        Destination destination = Destination::LoopBack);
     Pattern generateV2 (juce::uint64 motifSeed, juce::uint64 ornamentSeed,
                         const GeneratorSettings& settings);
 

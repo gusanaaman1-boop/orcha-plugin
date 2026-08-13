@@ -47,6 +47,14 @@ struct StyleInfo
     int maxOffbeatStack = 2;           // distinct roles allowed off the beat
     float syncopationTargetLo = 0.25f; // desired off-beat weight range
     float syncopationTargetHi = 0.6f;
+
+    // PerformanceProfile (Phase 6): correlated human timing, not blind
+    // jitter. All in milliseconds; everything scales with RANDOMNESS times
+    // the family's looseness, so conservative settings stay machine-tight.
+    float timingVarianceMs = 3.0f;     // bounded noise reach
+    float velTimingCorrMs = 1.5f;      // louder hits push slightly ahead
+    float driftMs = 1.5f;              // slow within-phrase breathing
+    float ghostLagMs = 2.0f;           // ghosts sit behind the beat
 };
 
 namespace RhythmStyle

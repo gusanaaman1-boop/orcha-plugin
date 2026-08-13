@@ -100,6 +100,11 @@ static StyleInfo makePsytrance()
     s.accentMap = { 1.00f, 0.82f, 0.85f, 0.82f, 0.96f, 0.82f, 0.85f, 0.82f,
                     1.00f, 0.82f, 0.85f, 0.82f, 0.96f, 0.82f, 0.86f, 0.88f };
     s.ghostiness = 0.3f;
+    // Precision IS the style: almost no variance, no drift, no ghost lag.
+    s.timingVarianceMs = 0.5f;
+    s.velTimingCorrMs = 0.3f;
+    s.driftMs = 0.2f;
+    s.ghostLagMs = 0.0f;
     s.syncopationTargetLo = 0.15f;
     s.syncopationTargetHi = 0.35f;
     s.skeletons = {
@@ -180,6 +185,9 @@ static StyleInfo makeArabic()
     // A "ka" is grammatically attached to a DUM or TAK - it never floats
     // alone in space.
     s.ghostsNeedNeighbor = true;
+    // The ka has its own timing vocabulary: late, and looser than the DUMs.
+    s.timingVarianceMs = 3.5f;
+    s.ghostLagMs = 3.0f;
     s.syncopationTargetLo = 0.3f;
     s.syncopationTargetHi = 0.55f;
     s.skeletons = {
@@ -406,6 +414,9 @@ static StyleInfo makeBreaks()
                     0.95f, 0.74f, 0.85f, 0.78f, 1.00f, 0.74f, 0.88f, 0.86f };
     s.highFeelMs = 2.0f;
     s.ghostiness = 0.7f;
+    // The loosest family: wide ghost-note timing is the amen's blood.
+    s.timingVarianceMs = 5.0f;
+    s.ghostLagMs = 3.5f;
     s.skeletons = {
         // Amen-style: backbeat snares with the famous ghost pair behind them.
         { "amen_shuffle", {

@@ -320,10 +320,17 @@ void OrchaAudioProcessor::enqueueBuild (std::vector<int> indices,
             const auto o0 = inputs[0].seeds.orn;
             for (int j = 0; j < poolN && generation.load() == gen; ++j)
             {
+                // Every 8th candidate is a transition (throw / deflate /
+                // stop), scored WITH its ending, so the dramatic persona
+                // slots can pick real transition cards.
+                const auto dest = j % 8 == 5 ? Destination::ToDrop
+                                : j % 8 == 6 ? Destination::ToBreak
+                                : j % 8 == 7 ? Destination::ToStop
+                                             : Destination::LoopBack;
                 auto pat = PatternValidator::validate (LoopGenerator::generateV2 (
                     LoopGenerator::deriveSeed (m0 ^ 0xB00B5ull, j),
                     LoopGenerator::deriveSeed (o0 ^ 0xCAFEull, j),
-                    settingsCopy, traits));
+                    settingsCopy, traits, dest));
                 feats.push_back (MusicalScorer::extract (pat));
                 scores.push_back (MusicalScorer::score (pat, settingsCopy));
                 candidatePool.push_back (std::move (pat));
@@ -363,7 +370,8 @@ void OrchaAudioProcessor::enqueueBuild (std::vector<int> indices,
                 auto makePattern = [&] (juce::uint64 m, juce::uint64 o)
                 {
                     return in.seeds.algo >= 2
-                        ? LoopGenerator::generateV2 (m, o, settingsCopy, traits)
+                        ? LoopGenerator::generateV2 (m, o, settingsCopy, traits,
+                              (Destination) juce::jlimit (0, 3, in.seeds.dest))
                         : LoopGenerator::generate (m, o, settingsCopy);
                 };
                 juce::uint64 orn = in.seeds.orn;
@@ -416,7 +424,8 @@ void OrchaAudioProcessor::enqueueBuild (std::vector<int> indices,
                 opt.ready = true;
                 opt.present = true;
                 self->pendingSeeds[(size_t) index] = { pattern.seed, pattern.ornamentSeed,
-                                                      pattern.algo };
+                                                      pattern.algo,
+                                                      (int) pattern.destination };
                 // A playing card follows its refreshed audio seamlessly.
                 if (self->preview.playingOption() == index)
                     self->preview.play (loop);
@@ -442,7 +451,8 @@ void OrchaAudioProcessor::rerenderAtCurrentTempo()
         {
             pendingSeeds[(size_t) i] = { options[(size_t) i].pattern.seed,
                                          options[(size_t) i].pattern.ornamentSeed,
-                                         options[(size_t) i].pattern.algo };
+                                         options[(size_t) i].pattern.algo,
+                                         (int) options[(size_t) i].pattern.destination };
             present.push_back (i);
         }
     if (! present.empty() && anySampleLoaded())
@@ -621,6 +631,8 @@ void OrchaAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
         v.setProperty ("dly", (double) opt.fxDelay, nullptr);
         v.setProperty ("algo", opt.present ? opt.pattern.algo
                                            : pendingSeeds[(size_t) i].algo, nullptr);
+        v.setProperty ("dest", opt.present ? (int) opt.pattern.destination
+                                           : pendingSeeds[(size_t) i].dest, nullptr);
 
         // A user-edited pattern cannot be rebuilt from seeds - store it whole.
         if (opt.edited)
@@ -697,7 +709,8 @@ void OrchaAudioProcessor::setStateInformation (const void* data, int sizeInBytes
                 : LoopGenerator::deriveSeed (motif, 4242);
             // Projects saved before engine 2 carry no algo attribute: they
             // restore through the frozen v1 path, bit-for-bit, forever.
-            pendingSeeds[(size_t) i] = { motif, orn, (int) v.getProperty ("algo", 1) };
+            pendingSeeds[(size_t) i] = { motif, orn, (int) v.getProperty ("algo", 1),
+                                         (int) v.getProperty ("dest", 0) };
             options[(size_t) i].favorite = v.getProperty ("favorite", false);
             // 0.6.0 saved these as bools; a bool var reads back as 0/1.
             options[(size_t) i].fxReverb = (float) (double) v.getProperty ("rvb", 0.0);
