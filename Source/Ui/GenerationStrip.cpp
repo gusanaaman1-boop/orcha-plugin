@@ -51,6 +51,13 @@ GenerationStrip::GenerationStrip()
     generateButton.setColour (juce::TextButton::textColourOffId, juce::Colours::black);
     generateButton.onClick = [this] { if (onGenerate) onGenerate(); };
     addAndMakeVisible (generateButton);
+
+    // GENERATE SET: one musical world as groove / build / drop / break.
+    setButton.setColour (juce::TextButton::buttonColourId, theme::panelLight);
+    setButton.setColour (juce::TextButton::textColourOffId, theme::turquoise);
+    setButton.setTooltip ("Generate a related SET: 3x GROOVE, 3x BUILD, 3x DROP, 3x BREAK - one musical world");
+    setButton.onClick = [this] { if (onGenerateSet) onGenerateSet(); };
+    addAndMakeVisible (setButton);
 }
 
 void GenerationStrip::wireToggleGroup (std::vector<juce::TextButton*> group, int radioId)
@@ -160,6 +167,7 @@ void GenerationStrip::resized()
     }
 
     auto generateArea = area.removeFromRight (juce::jmax (160, area.getWidth() * 26 / 100));
+    setButton.setBounds (generateArea.removeFromRight (46).reduced (2, 8));
     generateButton.setBounds (generateArea.reduced (4, 2));
 
     pitchButton.setBounds (area.removeFromRight (56).reduced (2, 8));

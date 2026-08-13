@@ -50,6 +50,8 @@ private:
     int index = -1;
     Pattern working;                 // the pattern being edited (local copy)
     juce::TextButton resetButton { "RESET" }, closeButton { "CLOSE" };
+    juce::TextButton cleanButton { "CLEAN" };   // popup: Light/Medium/Hard
+    juce::ComboBox endingBox;                   // AUTO/LOOP/DROP/BREAK/STOP
     // Amount sliders, colour-coded: reverb red, delay blue. 0 = off.
     juce::Slider reverbSlider, delaySlider;
 

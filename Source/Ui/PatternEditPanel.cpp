@@ -39,6 +39,36 @@ PatternEditPanel::PatternEditPanel (OrchaAudioProcessor& p) : processor (p)
     initFxSlider (reverbSlider, juce::Colour (0xffe85d4c));   // red
     initFxSlider (delaySlider, juce::Colour (0xff4da3ff));    // strong blue
 
+    // CLEAN: three strengths behind one small button - decoration strips
+    // away, anchors and planned silence are untouchable, RESET undoes.
+    cleanButton.onClick = [this]
+    {
+        juce::PopupMenu m;
+        m.addItem (1, "Light - ghosts and graces");
+        m.addItem (2, "Medium - also quiet ornaments and soft rolls");
+        m.addItem (3, "Hard - back to skeleton and strong motif");
+        m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (cleanButton),
+            [this] (int choice)
+            {
+                if (choice > 0 && index >= 0)
+                    processor.cleanOption (index, choice);
+            });
+    };
+    addAndMakeVisible (cleanButton);
+
+    // ENDING: where this loop is going. AUTO keeps the engine's choice.
+    endingBox.addItem ("ENDING: AUTO", 1);
+    endingBox.addItem ("ENDING: LOOP", 2);
+    endingBox.addItem ("ENDING: DROP", 3);
+    endingBox.addItem ("ENDING: BREAK", 4);
+    endingBox.addItem ("ENDING: STOP", 5);
+    endingBox.onChange = [this]
+    {
+        if (index >= 0 && endingBox.getSelectedId() > 0)
+            processor.setOptionEnding (index, endingBox.getSelectedId() - 2);
+    };
+    addAndMakeVisible (endingBox);
+
     setVisible (false);
 }
 
@@ -53,6 +83,8 @@ void PatternEditPanel::openFor (int optionIndex)
                            juce::dontSendNotification);
     delaySlider.setValue (processor.option (optionIndex).fxDelay,
                           juce::dontSendNotification);
+    endingBox.setSelectedId (processor.option (optionIndex).endingOverride + 2,
+                             juce::dontSendNotification);
     setVisible (true);
     toFront (false);
     repaint();
@@ -238,6 +270,10 @@ void PatternEditPanel::resized()
     delaySlider.setBounds (top.removeFromRight (110));
     top.removeFromRight (44);   // room for the DELAY caption (painted)
     reverbSlider.setBounds (top.removeFromRight (110));
+    top.removeFromRight (12);
+    endingBox.setBounds (top.removeFromRight (130));
+    top.removeFromRight (6);
+    cleanButton.setBounds (top.removeFromRight (64));
 }
 
 void PatternEditPanel::mouseDown (const juce::MouseEvent& e)

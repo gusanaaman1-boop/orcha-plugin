@@ -157,6 +157,82 @@ void OrchaAudioProcessor::generateAll()
     enqueueBuild (std::move (toBuild), {}, false, true);
 }
 
+void OrchaAudioProcessor::generateSet()
+{
+    if (! anySampleLoaded())
+        return;
+    auto& rnd = juce::Random::getSystemRandom();
+    const juce::uint64 master = ((juce::uint64) (juce::uint32) rnd.nextInt() << 32)
+                              ^ (juce::uint64) juce::Time::getHighResolutionTicks();
+    // ONE motif for the whole set: same skeleton, lead voice and cell -
+    // the same musical world, stated as groove, build, drop and break.
+    const juce::uint64 setMotif = LoopGenerator::deriveSeed (master, 777);
+    static const Mode groupModes[4] = { Mode::GROOVE, Mode::BUILD,
+                                        Mode::DROP, Mode::BREAK };
+    std::vector<int> toBuild;
+    for (int i = 0; i < numOptions; ++i)
+    {
+        auto& opt = options[(size_t) i];
+        if (opt.favorite && opt.present)
+            continue;
+        pendingSeeds[(size_t) i] = { setMotif,
+                                     LoopGenerator::deriveSeed (~master, i), 2,
+                                     0, (int) groupModes[i / 3] };
+        opt.ready = false;
+        opt.endingOverride = -1;
+        toBuild.push_back (i);
+    }
+    enqueueBuild (std::move (toBuild));   // no pool: cohesion IS the point
+}
+
+bool OrchaAudioProcessor::exportAll (const juce::File& directory)
+{
+    if (! directory.isDirectory() && ! directory.createDirectory())
+        return false;
+    juce::var manifest;
+    auto* arr = new juce::DynamicObject();
+    juce::Array<juce::var> cards;
+    int exported = 0;
+    for (int i = 0; i < numOptions; ++i)
+    {
+        const auto& opt = options[(size_t) i];
+        if (! opt.present || ! opt.ready || opt.loop == nullptr)
+            continue;
+        const auto base = juce::String ("ORCHA_")
+            + familyName (opt.pattern.settings.family) + "_"
+            + opt.pattern.name.replaceCharacter (' ', '_') + "_"
+            + juce::String (juce::roundToInt (opt.loop->bpm)) + "bpm_"
+            + juce::String (opt.pattern.settings.bars) + "bars_card"
+            + juce::String (i + 1).paddedLeft ('0', 2);
+        const auto wav = ensureWavFor (i);
+        const auto mid = ensureMidiFor (i);
+        if (wav.existsAsFile())
+            wav.copyFileTo (directory.getChildFile (
+                (base + ".wav").replaceCharacter (' ', '_')));
+        if (mid.existsAsFile())
+            mid.copyFileTo (directory.getChildFile (
+                (base + ".mid").replaceCharacter (' ', '_')));
+        auto* card = new juce::DynamicObject();
+        card->setProperty ("card", i + 1);
+        card->setProperty ("name", opt.pattern.name);
+        card->setProperty ("family", familyName (opt.pattern.settings.family));
+        card->setProperty ("mode", modeName (opt.pattern.settings.mode));
+        card->setProperty ("bars", opt.pattern.settings.bars);
+        card->setProperty ("bpm", opt.loop->bpm);
+        card->setProperty ("motifSeed", juce::String::toHexString ((juce::int64) opt.pattern.seed));
+        card->setProperty ("ornamentSeed", juce::String::toHexString ((juce::int64) opt.pattern.ornamentSeed));
+        card->setProperty ("algo", opt.pattern.algo);
+        card->setProperty ("destination", (int) opt.pattern.destination);
+        cards.add (juce::var (card));
+        ++exported;
+    }
+    arr->setProperty ("plugin", "ORCHA");
+    arr->setProperty ("cards", cards);
+    directory.getChildFile ("manifest.json")
+        .replaceWithText (juce::JSON::toString (juce::var (arr), false));
+    return exported > 0;
+}
+
 void OrchaAudioProcessor::regenerateOption (int index)
 {
     if (index < 0 || index >= numOptions || ! anySampleLoaded())
@@ -215,6 +291,44 @@ void OrchaAudioProcessor::resetOptionEdits (int index)
     enqueueBuild ({ index });
 }
 
+void OrchaAudioProcessor::cleanOption (int index, int strength)
+{
+    if (index < 0 || index >= numOptions || ! options[(size_t) index].present)
+        return;
+    Pattern cleaned = options[(size_t) index].pattern;
+    LoopGenerator::cleanPattern (cleaned, strength);
+    applyEditedPattern (index, std::move (cleaned));
+}
+
+void OrchaAudioProcessor::setOptionEnding (int index, int endingOverride)
+{
+    if (index < 0 || index >= numOptions)
+        return;
+    auto& opt = options[(size_t) index];
+    opt.endingOverride = juce::jlimit (-1, 3, endingOverride);
+    if (! opt.present)
+        return;
+    opt.ready = false;
+    if (opt.edited)
+    {
+        // Edited cards keep every user decision: only the transition region
+        // is rewritten, deterministically from the card's own seeds.
+        if (opt.endingOverride >= 0)
+            LoopGenerator::applyEnding (opt.pattern,
+                (Destination) opt.endingOverride,
+                deriveTraits (samples, roleMap),
+                opt.pattern.ornamentSeed ^ 0xE4D1E4D1ull);
+        enqueueBuild ({ index }, {}, true);
+    }
+    else
+    {
+        // Generated cards re-generate from their stored seeds with the
+        // forced destination - same identity, new ending.
+        enqueueBuild ({ index });
+    }
+    notifyModel();
+}
+
 void OrchaAudioProcessor::setOptionFx (int index, float reverb, float delay)
 {
     if (index < 0 || index >= numOptions)
@@ -247,12 +361,15 @@ void OrchaAudioProcessor::enqueueBuild (std::vector<int> indices,
         bool useExisting = false;   // edited pattern: render as-is, no generate
         Pattern existing;
         float fxReverb = 0.0f, fxDelay = 0.0f;    // card-level, survives regen
+        int endingOverride = -1;                  // A8: -1 AUTO
     };
     std::vector<BuildInput> inputs;
     for (int i : indices)
     {
         juce::String name;
-        name << modeName (settings.mode) << ' '
+        const auto cardMode = pendingSeeds[(size_t) i].modeOv >= 0
+            ? (Mode) pendingSeeds[(size_t) i].modeOv : settings.mode;
+        name << modeName (cardMode) << ' '
              << juce::String (i + 1).paddedLeft ('0', 2);
         BuildInput in { i, pendingSeeds[(size_t) i], name, false, {} };
         if (options[(size_t) i].edited
@@ -264,6 +381,7 @@ void OrchaAudioProcessor::enqueueBuild (std::vector<int> indices,
         }
         in.fxReverb = options[(size_t) i].fxReverb;
         in.fxDelay = options[(size_t) i].fxDelay;
+        in.endingOverride = options[(size_t) i].endingOverride;
         inputs.push_back (std::move (in));
     }
 
@@ -311,33 +429,48 @@ void OrchaAudioProcessor::enqueueBuild (std::vector<int> indices,
         std::vector<Pattern> chosen;
         if (freshBatch && inputs.size() >= 4)
         {
-            const int poolN = (int) inputs.size() * 6;
+            // Phase A1: ONE source of truth for pool sizing, deterministic
+            // prefix-stable expansion - the first 96 of a 192 run are the
+            // same candidates as a 96 run.
             std::vector<Pattern> candidatePool;
             std::vector<MusicalScorer::Features> feats;
             std::vector<MusicalScorer::ScoreBreakdown> scores;
-            candidatePool.reserve ((size_t) poolN);
             const auto m0 = inputs[0].seeds.motif;
             const auto o0 = inputs[0].seeds.orn;
-            for (int j = 0; j < poolN && generation.load() == gen; ++j)
+            auto growPoolTo = [&] (int n)
             {
-                // Every 8th candidate is a transition (throw / deflate /
-                // stop), scored WITH its ending, so the dramatic persona
-                // slots can pick real transition cards.
-                const auto dest = j % 8 == 5 ? Destination::ToDrop
-                                : j % 8 == 6 ? Destination::ToBreak
-                                : j % 8 == 7 ? Destination::ToStop
-                                             : Destination::LoopBack;
-                auto pat = PatternValidator::validate (LoopGenerator::generateV2 (
-                    LoopGenerator::deriveSeed (m0 ^ 0xB00B5ull, j),
-                    LoopGenerator::deriveSeed (o0 ^ 0xCAFEull, j),
-                    settingsCopy, traits, dest));
-                feats.push_back (MusicalScorer::extract (pat));
-                scores.push_back (MusicalScorer::score (pat, settingsCopy));
-                candidatePool.push_back (std::move (pat));
+                for (int j = (int) candidatePool.size();
+                     j < n && generation.load() == gen; ++j)
+                {
+                    // Every 8th candidate is a transition (throw / deflate /
+                    // stop), scored WITH its ending, so the dramatic persona
+                    // slots can pick real transition cards.
+                    const auto dest = j % 8 == 5 ? Destination::ToDrop
+                                    : j % 8 == 6 ? Destination::ToBreak
+                                    : j % 8 == 7 ? Destination::ToStop
+                                                 : Destination::LoopBack;
+                    auto pat = PatternValidator::validate (LoopGenerator::generateV2 (
+                        LoopGenerator::deriveSeed (m0 ^ 0xB00B5ull, j),
+                        LoopGenerator::deriveSeed (o0 ^ 0xCAFEull, j),
+                        settingsCopy, traits, dest));
+                    feats.push_back (MusicalScorer::extract (pat));
+                    scores.push_back (MusicalScorer::score (pat, settingsCopy));
+                    candidatePool.push_back (std::move (pat));
+                }
+            };
+            std::vector<int> sel;
+            for (int size : { CandidatePoolConfig::initialPoolSize,
+                              CandidatePoolConfig::firstExpansionSize,
+                              CandidatePoolConfig::finalExpansionSize })
+            {
+                growPoolTo (size);
+                sel = MusicalScorer::selectDiverse (candidatePool, feats, scores,
+                                                    (int) inputs.size(),
+                                                    settingsCopy);
+                if ((int) sel.size() >= (int) inputs.size())
+                    break;
             }
-            for (int idx : MusicalScorer::selectDiverse (candidatePool, feats,
-                                                         scores,
-                                                         (int) inputs.size()))
+            for (int idx : sel)
                 chosen.push_back (candidatePool[(size_t) idx]);
         }
 
@@ -369,10 +502,15 @@ void OrchaAudioProcessor::enqueueBuild (std::vector<int> indices,
                 // request never loses its motif to the diversity check.
                 auto makePattern = [&] (juce::uint64 m, juce::uint64 o)
                 {
+                    const auto dest = (Destination) juce::jlimit (0, 3,
+                        in.endingOverride >= 0 ? in.endingOverride
+                                               : in.seeds.dest);
+                    auto local = settingsCopy;
+                    if (in.seeds.modeOv >= 0)
+                        local.mode = (Mode) juce::jlimit (0, 3, in.seeds.modeOv);
                     return in.seeds.algo >= 2
-                        ? LoopGenerator::generateV2 (m, o, settingsCopy, traits,
-                              (Destination) juce::jlimit (0, 3, in.seeds.dest))
-                        : LoopGenerator::generate (m, o, settingsCopy);
+                        ? LoopGenerator::generateV2 (m, o, local, traits, dest)
+                        : LoopGenerator::generate (m, o, local);
                 };
                 juce::uint64 orn = in.seeds.orn;
                 for (int attempt = 0; attempt < 8; ++attempt)
@@ -452,7 +590,10 @@ void OrchaAudioProcessor::rerenderAtCurrentTempo()
             pendingSeeds[(size_t) i] = { options[(size_t) i].pattern.seed,
                                          options[(size_t) i].pattern.ornamentSeed,
                                          options[(size_t) i].pattern.algo,
-                                         (int) options[(size_t) i].pattern.destination };
+                                         (int) options[(size_t) i].pattern.destination,
+                                         (int) options[(size_t) i].pattern.settings.mode
+                                             == (int) settings.mode ? -1
+                                             : (int) options[(size_t) i].pattern.settings.mode };
             present.push_back (i);
         }
     if (! present.empty() && anySampleLoaded())
@@ -633,6 +774,9 @@ void OrchaAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
                                            : pendingSeeds[(size_t) i].algo, nullptr);
         v.setProperty ("dest", opt.present ? (int) opt.pattern.destination
                                            : pendingSeeds[(size_t) i].dest, nullptr);
+        v.setProperty ("endov", opt.endingOverride, nullptr);
+        if (pendingSeeds[(size_t) i].modeOv >= 0)
+            v.setProperty ("modeov", pendingSeeds[(size_t) i].modeOv, nullptr);
 
         // A user-edited pattern cannot be rebuilt from seeds - store it whole.
         if (opt.edited)
@@ -710,11 +854,13 @@ void OrchaAudioProcessor::setStateInformation (const void* data, int sizeInBytes
             // Projects saved before engine 2 carry no algo attribute: they
             // restore through the frozen v1 path, bit-for-bit, forever.
             pendingSeeds[(size_t) i] = { motif, orn, (int) v.getProperty ("algo", 1),
-                                         (int) v.getProperty ("dest", 0) };
+                                         (int) v.getProperty ("dest", 0),
+                                         (int) v.getProperty ("modeov", -1) };
             options[(size_t) i].favorite = v.getProperty ("favorite", false);
             // 0.6.0 saved these as bools; a bool var reads back as 0/1.
             options[(size_t) i].fxReverb = (float) (double) v.getProperty ("rvb", 0.0);
             options[(size_t) i].fxDelay = (float) (double) v.getProperty ("dly", 0.0);
+            options[(size_t) i].endingOverride = v.getProperty ("endov", -1);
 
             if ((bool) v.getProperty ("edited", false))
             {

@@ -921,63 +921,8 @@ Pattern LoopGenerator::generateV2 (juce::uint64 motifSeed, juce::uint64 ornament
         }
     }
 
-    // --- 9b. destination-aware endings (Phase 7) --------------------------------
-    // A fill must know where it is going. LoopBack keeps the plan's ending;
-    // the transitions rewrite the last beat with their own grammar.
-    switch (destination)
-    {
-        case Destination::LoopBack:
-            break;
-        case Destination::ToDrop:
-        {
-            // Throw INTO the next section: an accented pickup on the last
-            // 16th, always - the ending must promise the impact.
-            Event pickup;
-            pickup.pos = steps - 1.0;
-            pickup.role = Role::LOW;
-            pickup.velocity = 1.0f;
-            pickup.protectedAnchor = true;
-            if (! hasEventAt (p.events, pickup.pos, Role::LOW))
-                p.events.push_back (pickup);
-            break;
-        }
-        case Destination::ToBreak:
-        {
-            // Deflate: the decoration leaves the last two steps, and a
-            // reverse swell (if the sample can carry it) pulls the air open.
-            p.events.erase (std::remove_if (p.events.begin(), p.events.end(),
-                [steps] (const Event& e)
-                { return e.pos >= steps - 2.0 && ! e.protectedAnchor; }),
-                p.events.end());
-            if (! traits[(size_t) Role::HIGH].weakTransient
-                && rng.chance (0.8f))
-            {
-                Event swell;
-                swell.pos = steps - 3.75;
-                swell.role = Role::HIGH;
-                swell.reverse = true;
-                swell.gateSteps = 3.45;
-                swell.velocity = 0.55f;
-                p.events.push_back (swell);
-            }
-            break;
-        }
-        case Destination::ToStop:
-        {
-            // The intentional stop: one final accent, then nothing.
-            p.events.erase (std::remove_if (p.events.begin(), p.events.end(),
-                [steps] (const Event& e) { return e.pos >= steps - 4.0; }),
-                p.events.end());
-            Event last;
-            last.pos = steps - 4.0;
-            last.role = Role::LOW;
-            last.velocity = 1.0f;
-            last.gateSteps = 3.0;
-            last.protectedAnchor = true;
-            p.events.push_back (last);
-            break;
-        }
-    }
+    // --- 9b. destination-aware endings (Phase 7 / A8 shared helper) -------------
+    applyEnding (p, destination, traits, ornamentSeed ^ 0xE4D1E4D1ull);
 
     std::sort (p.events.begin(), p.events.end(),
                [] (const Event& a, const Event& b) { return a.pos < b.pos; });
@@ -1040,6 +985,103 @@ Pattern LoopGenerator::generateV2 (juce::uint64 motifSeed, juce::uint64 ornament
         }
     }
     return p;
+}
+
+
+void LoopGenerator::applyEnding (Pattern& p, Destination destination,
+                                 const TraitsByRole& traits,
+                                 juce::uint64 choiceSeed)
+{
+    const int steps = p.stepCount();
+    juce::Random rng ((juce::int64) choiceSeed);
+    p.destination = destination;
+    switch (destination)
+    {
+        case Destination::LoopBack:
+            break;
+        case Destination::ToDrop:
+        {
+            // Throw INTO the next section: an accented pickup on the last
+            // 16th, always - the ending must promise the impact.
+            Event pickup;
+            pickup.pos = steps - 1.0;
+            pickup.role = Role::LOW;
+            pickup.velocity = 1.0f;
+            pickup.protectedAnchor = true;
+            bool exists = false;
+            for (const auto& e : p.events)
+                if (e.role == Role::LOW && std::abs (e.pos - pickup.pos) < 0.26)
+                    exists = true;
+            if (! exists)
+                p.events.push_back (pickup);
+            break;
+        }
+        case Destination::ToBreak:
+        {
+            // Deflate: the decoration leaves the last two steps, and a
+            // reverse swell (if the sample can carry it) pulls the air open.
+            p.events.erase (std::remove_if (p.events.begin(), p.events.end(),
+                [steps] (const Event& e)
+                { return e.pos >= steps - 2.0 && ! e.protectedAnchor; }),
+                p.events.end());
+            if (! traits[(size_t) Role::HIGH].weakTransient
+                && rng.nextFloat() < 0.8f)
+            {
+                Event swell;
+                swell.pos = steps - 3.75;
+                swell.role = Role::HIGH;
+                swell.reverse = true;
+                swell.gateSteps = 3.45;
+                swell.velocity = 0.55f;
+                p.events.push_back (swell);
+            }
+            break;
+        }
+        case Destination::ToStop:
+        {
+            // The intentional stop: one final accent, then nothing.
+            p.events.erase (std::remove_if (p.events.begin(), p.events.end(),
+                [steps] (const Event& e) { return e.pos >= steps - 4.0; }),
+                p.events.end());
+            Event last;
+            last.pos = steps - 4.0;
+            last.role = Role::LOW;
+            last.velocity = 1.0f;
+            last.gateSteps = 3.0;
+            last.protectedAnchor = true;
+            p.events.push_back (last);
+            break;
+        }
+    }
+    std::sort (p.events.begin(), p.events.end(),
+               [] (const Event& a, const Event& b) { return a.pos < b.pos; });
+}
+
+void LoopGenerator::cleanPattern (Pattern& p, int strength)
+{
+    // Removal only - anchors, the destination ending's protected events and
+    // planned silence are structurally safe (nothing is ever ADDED here).
+    strength = juce::jlimit (1, 3, strength);
+    p.events.erase (std::remove_if (p.events.begin(), p.events.end(),
+        [strength] (const Event& e)
+        {
+            if (e.protectedAnchor)
+                return false;
+            const bool ghost = e.velocity <= 0.28f && e.gateSteps == 0.5 && ! e.roll;
+            const bool grace = ! e.roll
+                && std::abs (e.pos - std::round (e.pos)) > 0.01
+                && e.velocity < 0.45f && ! e.reverse;
+            if (strength >= 1 && (ghost || grace))
+                return true;
+            const bool quietOrnament = e.gateSteps == 0.75 && e.velocity < 0.45f;
+            const bool softRoll = e.roll && e.velocity < 0.4f;
+            if (strength >= 2 && (quietOrnament || softRoll))
+                return true;
+            if (strength >= 3 && ! e.roll && ! e.reverse && e.velocity < 0.55f)
+                return true;
+            return false;
+        }),
+        p.events.end());
 }
 
 } // namespace orcha

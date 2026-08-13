@@ -34,6 +34,7 @@ public:
         bool edited = false;            // user edits win over the generator
         float fxReverb = 0.0f;          // card-level polish amounts (0 = off),
         float fxDelay = 0.0f;           // survive regeneration
+        int endingOverride = -1;        // -1 = AUTO, else forced Destination
     };
 
     InputSample::Ptr getSample (int slot) const   { return samples[(size_t) slot]; }
@@ -53,6 +54,12 @@ public:
 
     const Option& option (int index) const        { return options[(size_t) index]; }
     void generateAll();                 // fresh seeds; favorites keep theirs
+    // Phase B1 - GENERATE SET: 12 cards in four groups of three (GROOVE /
+    // BUILD / DROP / BREAK), all sharing ONE motif seed - the same musical
+    // world stated four ways. Favorites keep their slots.
+    void generateSet();
+    // Phase B5 - export every present card as WAV + MIDI + manifest.json.
+    bool exportAll (const juce::File& directory);
     // Variation: keeps the card's motif seed (same groove) and re-rolls only
     // the ornament seed. A card that was never generated gets both fresh.
     // Discards manual edits - a fresh take starts from the generator.
@@ -67,6 +74,12 @@ public:
     // Baked-in reverb/delay amounts (0..1) for one card; re-renders the same
     // pattern without regenerating it.
     void setOptionFx (int index, float reverb, float delay);
+    // A7 - CLEAN: strip decoration at strength 1..3. Deterministic, becomes
+    // a user edit (RESET restores the generated take).
+    void cleanOption (int index, int strength);
+    // A8 - ENDING override: -1 AUTO, else a forced Destination. Regenerates
+    // only the transition behavior; the card's identity survives.
+    void setOptionEnding (int index, int endingOverride);
     void toggleFavorite (int index)     { options[(size_t) index].favorite = ! options[(size_t) index].favorite; notifyModel(); }
     void togglePlay (int index);
     bool anySampleLoaded() const;
@@ -131,7 +144,8 @@ private:
 
     // algo: which generator rebuilt this slot's pattern. Restored v0.9.0
     // projects keep 1 (the frozen engine); new generations use 2.
-    struct SeedPair { juce::uint64 motif = 0, orn = 0; int algo = 2; int dest = 0; };
+    struct SeedPair { juce::uint64 motif = 0, orn = 0; int algo = 2; int dest = 0;
+                      int modeOv = -1; };   // B1: per-card section override
 
     std::vector<InputSample::Ptr> samples { numSlots, nullptr };   // transformed
     std::vector<InputSample::Ptr> rawSamples { numSlots, nullptr };

@@ -42,6 +42,19 @@ namespace LoopGenerator
     // Derives the per-option seed stream from a master seed. Splitmix64: good
     // dispersion, stable across platforms.
     juce::uint64 deriveSeed (juce::uint64 master, int optionIndex);
+
+    // Phase A7 - CLEAN: deterministic decoration stripping in three
+    // strengths. 1 = ghosts and graces; 2 = also quiet ornaments and soft
+    // rolls; 3 = back to skeleton + strong motif. Anchors always survive,
+    // and removal can never violate planned silence (it only removes).
+    void cleanPattern (Pattern& p, int strength);
+
+    // Phase A8 - ENDING override: rewrite ONLY the transition region of an
+    // existing pattern to the given destination. Deterministic via
+    // choiceSeed. Used by generateV2 itself and by the EDIT panel when the
+    // user forces an ending on an edited card.
+    void applyEnding (Pattern& p, Destination destination,
+                      const TraitsByRole& traits, juce::uint64 choiceSeed);
 }
 
 } // namespace orcha

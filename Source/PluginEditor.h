@@ -43,6 +43,8 @@ private:
     GenerationStrip strip;
     std::array<std::unique_ptr<OptionCard>, OrchaAudioProcessor::numOptions> optionCards;
     juce::TextButton generateMoreButton { "GENERATE MORE" };
+    juce::TextButton exportAllButton { "EXPORT ALL" };
+    std::unique_ptr<juce::FileChooser> exportChooser;
     PatternEditPanel editPanel;
     SampleEditPanel samplePanel;
 

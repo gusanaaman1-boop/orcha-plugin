@@ -11,6 +11,18 @@ namespace orcha
 // compared through perceptual features, and the 12 cards are selected
 // JOINTLY for quality and diversity. Deterministic and inspectable - no
 // opaque model, every score explains itself.
+// THE single source of truth for candidate-pool sizing (Phase A1). The old
+// 72-vs-96 contradiction is resolved here: 96 is the default, expansion is
+// deterministic and prefix-stable (the first 96 of a 192 run are identical
+// to a 96 run), and no other file may carry its own number.
+struct CandidatePoolConfig
+{
+    static constexpr int initialPoolSize = 96;
+    static constexpr int firstExpansionSize = 144;
+    static constexpr int finalExpansionSize = 192;
+    static constexpr int outputCount = 12;
+};
+
 namespace MusicalScorer
 {
     // Perceptual features: what two patterns must differ in to FEEL
@@ -48,16 +60,41 @@ namespace MusicalScorer
 
     ScoreBreakdown score (const Pattern& p, const GeneratorSettings& s);
 
-    // Joint selection: `count` indices into `pool`, chosen greedily by
+    // Phase A2: the explicit three-stage pipeline.
+    //
+    // 1) HardValidator - absolute musical rejection, never relaxed. These
+    //    are conditions the constructive validator cannot fix.
+    bool hardReject (const Pattern& p, const GeneratorSettings& s);
+
+    // 2) Absolute quality floor per family x section - calibration table,
+    //    versioned. v1 of the table (2026-08-13): conservative values from
+    //    the score distribution of the current engine; the blind-listening
+    //    rounds recalibrate it. Read the table in MusicalScorer.cpp.
+    float absoluteQualityFloor (Family family, Mode mode);
+
+    // Critical sub-score floors - a candidate with a broken pulse cannot be
+    // rescued by great syncopation.
+    struct CriticalFloors
+    {
+        float pulseClarity = 0.2f;
+        float anchorIntegrity = 0.2f;
+        float boundaryQuality = 0.4f;
+    };
+
+    // 3) Joint selection: `count` indices into `pool`, chosen greedily by
     //   selectionScore = quality + diversityWeight * minDistanceToSelected
     //                  + personaAffinity(slot)
-    // over candidates above a quality floor (relative to the pool's best).
-    // Slots 0-2 direct/anchored, 3-5 driving/motif, 6-8 syncopated/organic,
-    // 9-11 dramatic/spacious. Deterministic; stable index tie-break.
+    // over candidates that pass the hard reject, the ABSOLUTE floor, the
+    // critical sub-score floors and a relative in-batch floor (55% of the
+    // pool's best). A starved second pass relaxes the SOFT floors only,
+    // documented in order - never hard validity. Slots 0-2 direct/anchored,
+    // 3-5 driving/motif, 6-8 syncopated/organic, 9-11 dramatic/spacious.
+    // Deterministic; stable index tie-break.
     std::vector<int> selectDiverse (const std::vector<Pattern>& pool,
                                     const std::vector<Features>& features,
                                     const std::vector<ScoreBreakdown>& scores,
-                                    int count);
+                                    int count,
+                                    const GeneratorSettings& settings);
 }
 
 } // namespace orcha

@@ -215,22 +215,76 @@ MusicalScorer::ScoreBreakdown MusicalScorer::score (const Pattern& p,
     return b;
 }
 
+bool MusicalScorer::hardReject (const Pattern& p, const GeneratorSettings& s)
+{
+    // Absolute musical validity - conditions the constructive validator
+    // cannot fix and no selection pressure may relax.
+    const int steps = p.stepCount();
+    const bool sparseByDesign = s.mode == Mode::BREAK
+                             || s.family == Family::CINEMATIC;
+    if ((int) p.events.size() < (sparseByDesign ? s.bars * 2 : s.bars * 4))
+        return true;   // functionally empty for its section
+
+    if (s.mode != Mode::BREAK)
+    {
+        const bool anyLow = std::any_of (p.events.begin(), p.events.end(),
+            [] (const Event& e) { return e.role == Role::LOW; });
+        if (! anyLow)
+            return true;   // a groove with no low pulse at all
+    }
+
+    // A broken ending: nearly all the weight crammed into the final quarter.
+    float tail = 0.0f, total = 0.0f;
+    for (const auto& e : p.events)
+    {
+        const float w = e.velocity;
+        total += w;
+        if (e.pos >= steps * 0.75)
+            tail += w;
+    }
+    return total > 0.0f && tail / total > 0.6f;
+}
+
+float MusicalScorer::absoluteQualityFloor (Family family, Mode mode)
+{
+    // Calibration table v1 (2026-08-13). Derived from the current score
+    // distribution; the blind-listening rounds move these numbers. Sparse
+    // musical situations legitimately score lower on coverage components,
+    // so their absolute bar sits lower - that is intent, not leniency.
+    float floorQ = 0.35f;
+    if (mode == Mode::BREAK)
+        floorQ = 0.28f;
+    if (family == Family::CINEMATIC)
+        floorQ = juce::jmin (floorQ, 0.26f);
+    if (family == Family::PSYTRANCE || family == Family::EDM
+        || family == Family::MELODIC_TECHNO)
+        floorQ += 0.04f;   // dense grid styles score reliably higher
+    return floorQ;
+}
+
 std::vector<int> MusicalScorer::selectDiverse (const std::vector<Pattern>& pool,
                                                const std::vector<Features>& features,
                                                const std::vector<ScoreBreakdown>& scores,
-                                               int count)
+                                               int count,
+                                               const GeneratorSettings& settings)
 {
     std::vector<int> selected;
     if (pool.empty())
         return selected;
 
-    // A LOW floor relative to the pool's best: quality gates out the broken,
-    // diversity decides among the living. A high floor would flatten the 12
-    // cards into the scorer's single taste.
+    // Relative in-batch floor: quality gates out the weak-for-this-batch,
+    // diversity decides among the living. The ABSOLUTE floor and critical
+    // sub-scores below are what keep a uniformly weak batch from passing.
     float best = -1.0f;
     for (const auto& sc : scores)
         best = juce::jmax (best, sc.total);
-    const float floorQ = best * 0.55f;
+    const float floorQ = juce::jmax (best * 0.55f,
+                                     absoluteQualityFloor (settings.family,
+                                                           settings.mode));
+    const CriticalFloors crit;
+    std::vector<bool> rejected (pool.size(), false);
+    for (size_t j = 0; j < pool.size(); ++j)
+        rejected[j] = hardReject (pool[j], settings);
 
     auto personaAffinity = [&] (int slot, const Features& f)
     {
@@ -254,10 +308,16 @@ std::vector<int> MusicalScorer::selectDiverse (const std::vector<Pattern>& pool,
         for (int pass = 0; pass < 2 && bestIdx < 0; ++pass)
             for (size_t j = 0; j < pool.size(); ++j)
             {
-                if (used[j])
+                if (used[j] || rejected[j])
+                    continue;   // hard validity is NEVER relaxed
+                // Pass 0: soft floors in force. Pass 1 (starved): the soft
+                // floors relax, documented - hard validity never does.
+                if (pass == 0
+                    && (scores[j].total < floorQ
+                        || scores[j].pulseClarity < crit.pulseClarity
+                        || scores[j].anchorIntegrity < crit.anchorIntegrity
+                        || scores[j].boundaryQuality < crit.boundaryQuality))
                     continue;
-                if (pass == 0 && scores[j].total < floorQ)
-                    continue;   // second pass ignores the floor if starved
                 float minDist = 10.0f;
                 for (int sIdx : selected)
                     minDist = juce::jmin (minDist,

@@ -46,6 +46,11 @@ OrchaAudioProcessorEditor::OrchaAudioProcessorEditor (OrchaAudioProcessor& p)
         processor.generateAll();
     };
     strip.onPitchToggle = [this] (bool on) { processor.setPitchEnabled (on); };
+    strip.onGenerateSet = [this]
+    {
+        processor.settings = strip.getSettings();
+        processor.generateSet();
+    };
     addAndMakeVisible (strip);
 
     for (int i = 0; i < OrchaAudioProcessor::numOptions; ++i)
@@ -75,6 +80,23 @@ OrchaAudioProcessorEditor::OrchaAudioProcessorEditor (OrchaAudioProcessor& p)
     generateMoreButton.setColour (juce::TextButton::buttonColourId, theme::panel);
     generateMoreButton.setColour (juce::TextButton::textColourOffId, theme::turquoise);
     addAndMakeVisible (generateMoreButton);
+
+    exportAllButton.setColour (juce::TextButton::buttonColourId, theme::panel);
+    exportAllButton.setColour (juce::TextButton::textColourOffId, theme::textDim);
+    exportAllButton.onClick = [this]
+    {
+        exportChooser = std::make_unique<juce::FileChooser> (
+            "Export all cards to folder", juce::File());
+        exportChooser->launchAsync (juce::FileBrowserComponent::openMode
+                                    | juce::FileBrowserComponent::canSelectDirectories,
+            [this] (const juce::FileChooser& fc)
+            {
+                const auto dir = fc.getResult();
+                if (dir != juce::File())
+                    processor.exportAll (dir);
+            });
+    };
+    addAndMakeVisible (exportAllButton);
 
     processor.onModelChanged = [this] { refresh(); };
     // Fast tick for the playhead bar; the full model refresh runs on every
@@ -235,6 +257,8 @@ void OrchaAudioProcessorEditor::resized()
     area.removeFromTop (26);                       // divider (painted)
 
     auto bottom = area.removeFromBottom (40).reduced (12, 5);
+    exportAllButton.setBounds (bottom.removeFromRight (120));
+    bottom.removeFromRight (8);
     generateMoreButton.setBounds (bottom);
 
     auto grid = area.reduced (12, 2);

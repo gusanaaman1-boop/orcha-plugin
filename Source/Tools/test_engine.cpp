@@ -1458,8 +1458,8 @@ int main()
 
         // Joint selection: deterministic, floor-respecting, more diverse
         // than taking the first twelve.
-        const auto sel1 = MusicalScorer::selectDiverse (pool, feats, scores, 12);
-        const auto sel2 = MusicalScorer::selectDiverse (pool, feats, scores, 12);
+        const auto sel1 = MusicalScorer::selectDiverse (pool, feats, scores, 12, s);
+        const auto sel2 = MusicalScorer::selectDiverse (pool, feats, scores, 12, s);
         check (sel1 == sel2 && sel1.size() == 12, "selection is deterministic");
         {
             std::set<int> unique (sel1.begin(), sel1.end());
@@ -1622,6 +1622,103 @@ int main()
         check (gen (Destination::ToStop, 0).signature()
                    != gen (Destination::LoopBack, 0).signature(),
                "different destinations produce different endings");
+    }
+
+    // === PHASE A (v0.10 -> completion): pool config, floors, CLEAN, ENDING =========
+    {
+        GeneratorSettings s;
+        s.mode = Mode::GROOVE;
+        s.family = Family::EDM;
+
+        // Pool prefix stability: the first 96 of a 192 run are the same
+        // candidates as a 96 run (A1).
+        for (int j : { 0, 47, 95 })
+        {
+            const auto a = LoopGenerator::generateV2 (
+                LoopGenerator::deriveSeed (0xB00B5, j),
+                LoopGenerator::deriveSeed (0xCAFE, j), s);
+            const auto b = LoopGenerator::generateV2 (
+                LoopGenerator::deriveSeed (0xB00B5, j),
+                LoopGenerator::deriveSeed (0xCAFE, j), s);
+            check (a.signature() == b.signature(),
+                   "pool candidate streams are prefix-stable");
+        }
+        check (CandidatePoolConfig::initialPoolSize == 96
+               && CandidatePoolConfig::finalExpansionSize == 192,
+               "one source of truth for pool sizing");
+
+        // HardValidator (A2): a broken pattern is rejected absolutely, a
+        // generated one is not.
+        {
+            Pattern broken;
+            broken.settings = s;
+            Event lone;
+            lone.pos = 30.0;
+            lone.role = Role::HIGH;
+            lone.velocity = 0.9f;
+            broken.events = { lone };
+            check (MusicalScorer::hardReject (broken, s),
+                   "hard validity rejects the functionally empty");
+            const auto real = PatternValidator::validate (
+                LoopGenerator::generateV2 (5, 6, s));
+            check (! MusicalScorer::hardReject (real, s),
+                   "hard validity passes real candidates");
+        }
+
+        // CLEAN (A7): monotonic strengths, anchors always survive,
+        // deterministic.
+        {
+            const auto p0 = PatternValidator::validate (
+                LoopGenerator::generateV2 (99, 44, s));
+            Pattern l1 = p0, l2 = p0, l3 = p0, l1b = p0;
+            LoopGenerator::cleanPattern (l1, 1);
+            LoopGenerator::cleanPattern (l1b, 1);
+            LoopGenerator::cleanPattern (l2, 2);
+            LoopGenerator::cleanPattern (l3, 3);
+            check (l1.signature() == l1b.signature(), "CLEAN is deterministic");
+            check (l1.events.size() <= p0.events.size()
+                   && l2.events.size() <= l1.events.size()
+                   && l3.events.size() <= l2.events.size(),
+                   "CLEAN strengths strip monotonically");
+            auto anchors = [] (const Pattern& p)
+            {
+                int n = 0;
+                for (const auto& e : p.events)
+                    if (e.protectedAnchor)
+                        ++n;
+                return n;
+            };
+            check (anchors (l3) == anchors (p0),
+                   "CLEAN hard keeps every anchor");
+        }
+
+        // ENDING override on an existing pattern (A8): only the transition
+        // region changes; deterministic.
+        {
+            auto p0 = PatternValidator::validate (
+                LoopGenerator::generateV2 (123, 456, s));
+            p0.settings.bars = s.bars;
+            Pattern stop = p0, stop2 = p0;
+            LoopGenerator::applyEnding (stop, Destination::ToStop, {}, 777);
+            LoopGenerator::applyEnding (stop2, Destination::ToStop, {}, 777);
+            check (stop.signature() == stop2.signature(),
+                   "applyEnding is deterministic");
+            bool tailClear = true, headSame = true;
+            for (const auto& e : stop.events)
+                if (e.pos > stop.stepCount() - 4 + 0.26)
+                    tailClear = false;
+            // The head (first half) is untouched by an ending override.
+            juce::String h0, h1;
+            for (const auto& e : p0.events)
+                if (e.pos < p0.stepCount() / 2)
+                    h0 << juce::roundToInt (e.pos * 4.0) << ':' << (int) e.role << ';';
+            for (const auto& e : stop.events)
+                if (e.pos < stop.stepCount() / 2)
+                    h1 << juce::roundToInt (e.pos * 4.0) << ':' << (int) e.role << ';';
+            headSame = h0 == h1;
+            check (tailClear && headSame,
+                   "ENDING override rewrites only the transition region");
+        }
     }
 
     std::cout << (failures == 0 ? "ALL OK" : "FAILED") << " - "
