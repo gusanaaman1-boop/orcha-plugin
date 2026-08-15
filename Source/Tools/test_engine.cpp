@@ -19,6 +19,32 @@
 
 using namespace orcha;
 
+// The timing budgets below are Release numbers. A Debug or sanitizer build
+// runs the same work 10-30x slower - under ASan+UBSan the chain benchmark
+// takes 3.6 s against a 2 s budget - so asserting there would fail honest
+// builds and teach us to ignore the check. The benchmarks still RUN and
+// still print, so a sanitizer pass reports real timings; only the ceiling
+// is lifted.
+#if defined(__has_feature)
+ #if __has_feature(address_sanitizer) || __has_feature(thread_sanitizer) \
+     || __has_feature(memory_sanitizer) || __has_feature(undefined_behavior_sanitizer)
+  #define ORCHA_SANITIZED 1
+ #endif
+#endif
+#if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__)
+ #undef ORCHA_SANITIZED
+ #define ORCHA_SANITIZED 1
+#endif
+#ifndef ORCHA_SANITIZED
+ #define ORCHA_SANITIZED 0
+#endif
+#if defined(JUCE_DEBUG) && JUCE_DEBUG
+ #define ORCHA_DEBUG_BUILD 1
+#else
+ #define ORCHA_DEBUG_BUILD 0
+#endif
+static constexpr bool timingIsMeaningful = ! ORCHA_SANITIZED && ! ORCHA_DEBUG_BUILD;
+
 static int failures = 0;
 static int checks = 0;
 
@@ -1033,7 +1059,7 @@ int main()
             const double ms = juce::Time::highResolutionTicksToSeconds (
                 juce::Time::getHighResolutionTicks() - t0) * 1000.0;
             check (total > 0, "benchmark generated real patterns");
-            check (ms < 250.0, "96 symbolic v2 candidates well inside budget");
+            check (! timingIsMeaningful || ms < 250.0, "96 symbolic v2 candidates well inside budget");
             std::cout << "  v2 benchmark: 96 candidates in "
                       << juce::String (ms, 2) << " ms\n";
         }
@@ -1820,7 +1846,7 @@ int main()
             juce::Time::getHighResolutionTicks() - t0) * 1000.0;
         std::cout << "  render benchmark: 12 cards in "
                   << juce::String (ms, 1) << " ms\n";
-        check (ms < 4000.0, "12-card render inside budget");
+        check (! timingIsMeaningful || ms < 4000.0, "12-card render inside budget");
     }
 
     // === B4: chained phrase - FX tails must cross the card boundary ==============
@@ -1926,7 +1952,7 @@ int main()
         std::cout << "  chain benchmark: 12 wet 4-bar cards in "
                   << juce::String (chainMs, 1) << " ms\n";
         check (longChain.getNumSamples() > 0, "long chain rendered");
-        check (chainMs < 2000.0, "worst-case chain inside budget");
+        check (! timingIsMeaningful || chainMs < 2000.0, "worst-case chain inside budget");
     }
 
     std::cout << (failures == 0 ? "ALL OK" : "FAILED") << " - "

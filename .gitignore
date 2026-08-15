@@ -5,3 +5,4 @@ JUCE/
 .DS_Store
 audition/
 blind-kit/
+asan-*.log
