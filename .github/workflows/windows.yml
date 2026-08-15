@@ -1,0 +1,70 @@
+name: Windows
+
+# Manual only. Nothing here runs on a push: Actions minutes on a private
+# repo are metered, and a build that nobody asked for is a build nobody
+# wanted to pay for.
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    env:
+      # The same JUCE 9 commit every Naaman plug-in is pinned to.
+      JUCE_SHA: 857aab9c4eb3084af639a380a693dcec7d728b73
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache JUCE
+        id: juce-cache
+        uses: actions/cache@v4
+        with:
+          path: JUCE
+          key: juce-${{ env.JUCE_SHA }}
+
+      - name: Fetch JUCE at the pinned commit
+        if: steps.juce-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          git init JUCE
+          cd JUCE
+          git remote add origin https://github.com/juce-framework/JUCE.git
+          git fetch --depth 1 origin "$JUCE_SHA"
+          git checkout FETCH_HEAD
+
+      - name: Configure
+        run: >
+          cmake -S . -B build
+          -G "Visual Studio 17 2022" -A x64
+          -DORCHA_COPY_AFTER_BUILD=OFF
+          -DORCHA_JUCE_DIR_OVERRIDE=${{ github.workspace }}/JUCE
+
+      - name: Build plug-in and standalone
+        run: cmake --build build --config Release --target Orcha_VST3 Orcha_Standalone --parallel
+
+      # The reason this workflow is worth its minutes: MSVC sees things clang
+      # does not, and the engine's own suite is the fastest way to find them.
+      - name: Build the engine test suite
+        run: cmake --build build --config Release --target OrchaTests --parallel
+
+      - name: Run the engine test suite
+        run: ./build/OrchaTests_artefacts/Release/OrchaTests.exe
+
+      - name: Stage the artifact
+        shell: bash
+        run: |
+          mkdir -p out
+          cp -r build/Orcha_artefacts/Release/VST3/ORCHA.vst3 out/
+          cp build/Orcha_artefacts/Release/Standalone/ORCHA.exe out/ || true
+          cp packaging/README-WINDOWS.txt out/ || true
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: ORCHA-windows-x64
+          path: out
+          if-no-files-found: error
