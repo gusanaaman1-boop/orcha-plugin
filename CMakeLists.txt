@@ -11,6 +11,16 @@ project(Orcha VERSION 0.13.3 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Link the MSVC runtime statically. A plug-in that needs the Visual C++
+# Redistributable does not load on a machine that never had Visual Studio -
+# and it fails SILENTLY: the host simply does not list the plug-in, with no
+# error anywhere to search for. A few MB of binary buys away the single most
+# common "your plugin doesn't show up" support thread. Set before JUCE is
+# added, so its targets use the same runtime and the link agrees with itself.
+if(MSVC)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
+
 # JUCE lives outside this tree - the same ~/JUCE checkout (JUCE 9) every plugin
 # in this workspace uses. The Windows source bundle clones a pinned JUCE into
 # ./JUCE and passes ORCHA_JUCE_DIR_OVERRIDE so that pin beats any stray

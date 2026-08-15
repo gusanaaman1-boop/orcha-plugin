@@ -69,6 +69,25 @@ jobs:
       - name: Run the engine test suite
         run: ./build/OrchaTests_artefacts/Release/OrchaTests.exe
 
+      # A plug-in that needs the Visual C++ Redistributable fails to load on a
+      # clean machine, silently - the host just does not list it. The runtime
+      # is linked statically; this proves it stayed that way.
+      - name: No Visual C++ Redistributable dependency
+        shell: pwsh
+        run: |
+          $dll = "build/Orcha_artefacts/Release/VST3/ORCHA.vst3/Contents/x86_64-win/ORCHA.vst3"
+          $dumpbin = Get-ChildItem -Path "C:\Program Files\Microsoft Visual Studio" -Filter dumpbin.exe -Recurse -ErrorAction SilentlyContinue |
+                     Select-Object -First 1
+          if (-not $dumpbin) { Write-Host "dumpbin not found - skipping"; exit 0 }
+          $imports = & $dumpbin.FullName /dependents $dll
+          $imports | Write-Host
+          $bad = $imports | Select-String -Pattern "MSVCP\d+\.dll|VCRUNTIME\d+"
+          if ($bad) {
+            Write-Host "::error::the plug-in depends on the VC++ Redistributable"
+            exit 1
+          }
+          Write-Host "no VC++ Redistributable dependency"
+
       # The artifact IS the bundle that gets sent to people: a prebuilt plugin
       # next to the simple copy installer. No compiler on their side.
       - name: Stage the sendable bundle
