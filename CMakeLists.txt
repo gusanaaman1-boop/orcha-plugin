@@ -80,6 +80,17 @@ else()
     endif()
 endif()
 
+# Determinism across compilers. The same seed must produce the same pattern on
+# macOS and on Windows, or one project sounds like two. Both compilers are
+# allowed by default to fuse a*b+c into a single FMA, which rounds once instead
+# of twice - and the generator compares floats against thresholds, so a single
+# changed bit flips a musical decision. Applied to ORCHA's own sources only.
+if(MSVC)
+    list(APPEND ORCHA_WARNING_FLAGS /fp:strict)
+else()
+    list(APPEND ORCHA_WARNING_FLAGS -ffp-contract=off)
+endif()
+
 set(ORCHA_ENGINE_SOURCES
     Source/Engine/SampleAnalyzer.cpp
     Source/Engine/SampleLoader.cpp

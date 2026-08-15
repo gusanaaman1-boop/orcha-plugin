@@ -16,6 +16,7 @@
 #include "../Engine/SilencePlanner.h"
 #include "../Engine/MusicalScorer.h"
 #include "../Playback/PreviewPlayer.h"
+#include <map>
 
 using namespace orcha;
 
@@ -699,6 +700,7 @@ int main()
         // The two hashes answer different questions, and when a change moves
         // one but not the other, that difference is the whole answer.
         juce::String contentOnly;
+        std::map<juce::String, juce::String> perFamily;
         for (auto family : { Family::EDM, Family::MELODIC_TECHNO, Family::PSYTRANCE,
                              Family::URBAN, Family::BREAKS, Family::ARABIC,
                              Family::MEDITERRANEAN, Family::AFRO, Family::CINEMATIC,
@@ -733,28 +735,46 @@ int main()
                         // No signature() here: it walks the events in stored
                         // order, which is exactly what this hash must not see.
                         perEvent.sort (true);
-                        contentOnly << perEvent.joinIntoString (";") << '\n';
+                        const auto line = perEvent.joinIntoString (";") + "\n";
+                        contentOnly << line;
+                        perFamily[familyName (family)] << line;
                     }
         const juce::int64 hash = all.hashCode64();
         const juce::int64 contentHash = contentOnly.hashCode64();
-        // Re-recorded 2026-08-15, when every sort over events was given a
-        // total order. The previous value, 3514363310548923428, was recorded
-        // on macOS and was never reproducible on Windows: sorting on position
-        // alone left simultaneous hits for libc++ and the MSVC STL to order as
-        // they pleased, and the validator's de-duplication and event-count
-        // trim both keep whichever event they meet first.
+        // Both values re-recorded 2026-08-15. They are now the SAME on macOS
+        // and on Windows, which is the point - the first Windows CI run this
+        // code ever had proved they were not. Two separate causes, both fixed
+        // in the same session:
         //
-        // The CONTENT hash was measured on both engines before and after that
-        // change and did NOT move: 2010191849257386728 either way. So engine 1
-        // still generates exactly the same music - the same hits, velocities,
-        // micro-timing, pitches and gates - and only the order it stores
-        // simultaneous hits in became defined instead of accidental.
-        const juce::int64 golden = 1072853563969641616LL;
-        const juce::int64 goldenContent = 2010191849257386728LL;
+        //  1. Sorting events on position alone left simultaneous hits - a kick
+        //     and a hat on one step - comparing equal, and std::sort is not
+        //     stable. libc++ and the MSVC STL ordered them differently, and the
+        //     validator's de-duplication and event-count trim each keep
+        //     whichever event they meet first. Fixed by eventBefore(), a total
+        //     order. Measured before and after: this changed storage order ONLY,
+        //     the content hash held at 2010191849257386728.
+        //
+        //  2. Floating-point contraction. clang fused a*b+c into a single FMA
+        //     where MSVC did not, so a threshold comparison in the generator
+        //     could land on the other side. Fixed by -ffp-contract=off and
+        //     /fp:strict. This one DID change the music slightly on macOS
+        //     (content 2010191849257386728 -> 6994967397226463169): a handful
+        //     of last-bit decisions now resolve the same way everywhere.
+        //     Deliberate, and done before a single Windows user exists - the
+        //     alternative is one project sounding like two.
+        const juce::int64 golden = -7885527166888537179LL;
+        const juce::int64 goldenContent = 6994967397226463169LL;
         if (hash != golden)
             std::cout << "  v1 characterization hash: " << hash << "\n";
         if (contentHash != goldenContent)
             std::cout << "  v1 CONTENT hash: " << contentHash << "\n";
+        // When the hash moves, say WHERE. A per-family breakdown turns "the
+        // engine differs on Windows" into "these two families differ", which
+        // is the difference between a guess and a place to look.
+        if (hash != golden || contentHash != goldenContent)
+            for (const auto& [fam, text] : perFamily)
+                std::cout << "    family " << fam << " content "
+                          << text.hashCode64() << "\n";
         check (hash == golden, "ENGINE 1 IS FROZEN - characterization hash unchanged");
         check (contentHash == goldenContent,
                "ENGINE 1 IS FROZEN - pattern content unchanged");
