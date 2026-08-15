@@ -1,6 +1,6 @@
 @echo off
 setlocal enabledelayedexpansion
-title ORCHA 0.13.2 - Build and Install
+title ORCHA 0.13.3 - Build and Install
 
 REM ---------------------------------------------------------------------------
 REM  ONE file. Right-click it, "Run as administrator", and it does everything:
@@ -26,14 +26,14 @@ set "LOG=%ROOT%\Orcha-install-log.txt"
 set "DEST=C:\Program Files\Common Files\VST3"
 set "BUILD=%ROOT%\build-win"
 
-echo ORCHA 0.13.2 build and install log > "%LOG%"
+echo ORCHA 0.13.3 build and install log > "%LOG%"
 echo Started: %DATE% %TIME% >> "%LOG%"
 echo Folder: %ROOT% >> "%LOG%"
 
 cls
 echo.
 echo   ============================================================
-echo     ORCHA  0.13.2
+echo     ORCHA  0.13.3
 echo     Rhythm Loop Generator  -  by Gussa Naaman
 echo   ============================================================
 echo.
@@ -274,7 +274,7 @@ echo INSTALL OK >> "%LOG%"
 
 echo.
 echo   ============================================================
-echo     DONE. ORCHA 0.13.2 is installed.
+echo     DONE. ORCHA 0.13.3 is installed.
 echo   ============================================================
 echo.
 echo     %DEST%\ORCHA.vst3
@@ -288,7 +288,7 @@ echo     Then: drop 1-3 samples on the three cards, press GENERATE
 echo     LOOPS, and drag any card straight into an audio track.
 echo.
 echo     CHECK THE VERSION. Top-right of the plug-in window, small
-echo     grey text must read v0.13.2. If it reads something else,
+echo     grey text must read v0.13.3. If it reads something else,
 echo     Cubase is loading an older copy - tell me and send the log.
 echo.
 pause
