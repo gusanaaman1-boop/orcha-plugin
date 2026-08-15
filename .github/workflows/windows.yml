@@ -54,13 +54,18 @@ jobs:
       - name: Run the engine test suite
         run: ./build/OrchaTests_artefacts/Release/OrchaTests.exe
 
-      - name: Stage the artifact
+      # The artifact IS the bundle that gets sent to people: a prebuilt plugin
+      # next to the simple copy installer. No compiler on their side.
+      - name: Stage the sendable bundle
         shell: bash
         run: |
           mkdir -p out
           cp -r build/Orcha_artefacts/Release/VST3/ORCHA.vst3 out/
           cp build/Orcha_artefacts/Release/Standalone/ORCHA.exe out/ || true
-          cp packaging/README-WINDOWS.txt out/ || true
+          cp packaging/INSTALL-ORCHA.bat out/
+          cp packaging/UNINSTALL-ORCHA.bat out/
+          cp packaging/README-ORCHA-WINDOWS.txt out/README.txt
+          test -f out/ORCHA.vst3/Contents/x86_64-win/ORCHA.vst3
 
       - name: Upload
         uses: actions/upload-artifact@v4
