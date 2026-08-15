@@ -36,10 +36,25 @@ jobs:
           git fetch --depth 1 origin "$JUCE_SHA"
           git checkout FETCH_HEAD
 
+      # Which Visual Studio the runner actually has, printed before it matters.
+      # Hardcoding "Visual Studio 17 2022" failed outright once the image moved
+      # on, and the error said only "could not find any instance".
+      - name: Show the toolchain
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (Test-Path $vswhere) {
+            & $vswhere -latest -products * -format value -property displayName,installationVersion,installationPath
+          } else {
+            Write-Host "vswhere is not on this image"
+          }
+          cmake --version
+
+      # No -G: CMake picks the newest Visual Studio generator present, so the
+      # job survives the runner image being upgraded under us.
       - name: Configure
         run: >
-          cmake -S . -B build
-          -G "Visual Studio 17 2022" -A x64
+          cmake -S . -B build -A x64
           -DORCHA_COPY_AFTER_BUILD=OFF
           -DORCHA_JUCE_DIR_OVERRIDE=${{ github.workspace }}/JUCE
 
