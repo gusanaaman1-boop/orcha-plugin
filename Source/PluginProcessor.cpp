@@ -1114,7 +1114,10 @@ void OrchaAudioProcessor::setStateInformation (const void* data, int sizeInBytes
         for (const auto& v : ss)
         {
             const int slot = v.getProperty ("slot", -1);
-            const juce::File file ((juce::String) v.getProperty ("path", ""));
+            // toString(), not a cast to String: MSVC rejects the cast outright
+            // ("cannot convert from juce::var to juce::String") where clang
+            // quietly picks var's conversion operator.
+            const juce::File file (v.getProperty ("path", "").toString());
             if (slot >= 0 && slot < numSlots && file.existsAsFile())
             {
                 auto& t = transforms[(size_t) slot];
