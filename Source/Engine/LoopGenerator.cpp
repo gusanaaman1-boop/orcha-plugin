@@ -412,8 +412,7 @@ Pattern LoopGenerator::generate (juce::uint64 motifSeed, juce::uint64 ornamentSe
     }
 
     // --- 10. validation happens in PatternValidator (caller runs it) ----------
-    std::sort (p.events.begin(), p.events.end(),
-               [] (const Event& a, const Event& b) { return a.pos < b.pos; });
+    std::sort (p.events.begin(), p.events.end(), eventBefore);
     return p;
 }
 
@@ -924,8 +923,7 @@ Pattern LoopGenerator::generateV2 (juce::uint64 motifSeed, juce::uint64 ornament
     // --- 9b. destination-aware endings (Phase 7 / A8 shared helper) -------------
     applyEnding (p, destination, traits, ornamentSeed ^ 0xE4D1E4D1ull);
 
-    std::sort (p.events.begin(), p.events.end(),
-               [] (const Event& a, const Event& b) { return a.pos < b.pos; });
+    std::sort (p.events.begin(), p.events.end(), eventBefore);
 
     // --- 10. sample-aware spacing pass -----------------------------------------
     // The symbolic result must already respect what the audio can carry:
@@ -1053,8 +1051,7 @@ void LoopGenerator::applyEnding (Pattern& p, Destination destination,
             break;
         }
     }
-    std::sort (p.events.begin(), p.events.end(),
-               [] (const Event& a, const Event& b) { return a.pos < b.pos; });
+    std::sort (p.events.begin(), p.events.end(), eventBefore);
 }
 
 void LoopGenerator::cleanPattern (Pattern& p, int strength)

@@ -345,8 +345,7 @@ void PatternEditPanel::mouseUp (const juce::MouseEvent&)
         if (ev.role == Role::HIGH)
             ev.gateSteps = 0.75;
         working.events.push_back (ev);
-        std::sort (working.events.begin(), working.events.end(),
-                   [] (const Event& a, const Event& b) { return a.pos < b.pos; });
+        std::sort (working.events.begin(), working.events.end(), eventBefore);
         applyWorking();
     }
     else if (auto* ev = eventInCell (working, pressed))

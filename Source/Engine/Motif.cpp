@@ -128,8 +128,7 @@ Motif::Cell Motif::apply (const Cell& cell, Transform t, juce::Random& rng)
     auto& ev = out.events;
     auto sortCell = [&ev]
     {
-        std::sort (ev.begin(), ev.end(),
-                   [] (const Event& a, const Event& b) { return a.pos < b.pos; });
+        std::sort (ev.begin(), ev.end(), eventBefore);
     };
     sortCell();
 

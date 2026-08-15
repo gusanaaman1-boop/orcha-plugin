@@ -107,9 +107,16 @@ RoleMap SampleAnalyzer::assignRoles (std::vector<InputSample::Ptr>& samples)
     if (loaded.empty())
         return map;
 
+    // Slot index breaks ties: two samples can share a centroid exactly - the
+    // KIT feature loads ONE file into every slot - and std::sort would then
+    // hand out roles differently on different standard libraries.
     std::sort (loaded.begin(), loaded.end(), [] (const Slot& x, const Slot& y)
     {
-        return x.s->analysis.spectralCentroidHz < y.s->analysis.spectralCentroidHz;
+        const float cx = x.s->analysis.spectralCentroidHz;
+        const float cy = y.s->analysis.spectralCentroidHz;
+        if (cx != cy)
+            return cx < cy;
+        return x.index < y.index;
     });
 
     // Manual roles win first.
@@ -262,8 +269,15 @@ std::vector<SampleAnalyzer::KitSlice> SampleAnalyzer::chooseKitSlices (
     if (cands.size() < 2)
         return out;
 
+    // Start position breaks ties, for the same reason: two slices of one loop
+    // can measure the same brightness, and which one becomes LOW must not
+    // depend on the standard library.
     std::sort (cands.begin(), cands.end(), [] (const Cand& a, const Cand& b)
-    { return a.a.spectralCentroidHz < b.a.spectralCentroidHz; });
+    {
+        if (a.a.spectralCentroidHz != b.a.spectralCentroidHz)
+            return a.a.spectralCentroidHz < b.a.spectralCentroidHz;
+        return a.slice.start < b.slice.start;
+    });
     // Darkest -> LOW, brightest -> HIGH, most-middling -> MID.
     out.push_back (cands.front().slice);
     if (cands.size() >= 3)

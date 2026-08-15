@@ -119,6 +119,29 @@ struct RoleMap
 // so the 12 cover returns, throws and stops.
 enum class Destination { LoopBack = 0, ToDrop, ToBreak, ToStop };
 
+// A TOTAL order over events - every sort of a Pattern's events must use this.
+//
+// Sorting on position alone leaves simultaneous hits (a kick and a hat on the
+// same step: the common case, not the rare one) comparing equal, and
+// std::sort is not stable. libc++ and the MSVC STL then order those hits
+// differently, and because the validator's de-duplication and its
+// event-count trim both keep whichever event they meet first, the SAME SEED
+// produced a different pattern on Windows than on macOS. Ordering by every
+// field leaves nothing for the implementation to decide.
+inline bool eventBefore (const Event& a, const Event& b) noexcept
+{
+    if (a.pos             != b.pos)             return a.pos < b.pos;
+    if (a.role            != b.role)            return a.role < b.role;
+    if (a.velocity        != b.velocity)        return a.velocity < b.velocity;
+    if (a.microMs         != b.microMs)         return a.microMs < b.microMs;
+    if (a.pitchSemis      != b.pitchSemis)      return a.pitchSemis < b.pitchSemis;
+    if (a.gateSteps       != b.gateSteps)       return a.gateSteps < b.gateSteps;
+    if (a.reverse         != b.reverse)         return b.reverse;   // false first
+    if (a.roll            != b.roll)            return b.roll;
+    if (a.protectedAnchor != b.protectedAnchor) return b.protectedAnchor;
+    return false;
+}
+
 // A generated loop, fully determined by (seed, ornamentSeed, settings).
 // Two seeds on purpose: `seed` decides the MOTIF (skeleton, lead role,
 // anchors - the loop's character) and `ornamentSeed` decides everything

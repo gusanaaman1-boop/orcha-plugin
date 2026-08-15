@@ -323,8 +323,7 @@ void OrchaAudioProcessor::applyEditedPattern (int index, Pattern edited)
         [lastAllowed] (const Event& e)
         { return e.pos < 0.0 || e.pos > lastAllowed || e.velocity <= 0.0f; }),
         edited.events.end());
-    std::sort (edited.events.begin(), edited.events.end(),
-               [] (const Event& a, const Event& b) { return a.pos < b.pos; });
+    std::sort (edited.events.begin(), edited.events.end(), eventBefore);
 
     auto& opt = options[(size_t) index];
     opt.pattern = std::move (edited);

@@ -694,6 +694,11 @@ int main()
     // is NOT covered by this hash.
     {
         juce::String all;
+        // The same content with each pattern's events sorted as text, so it
+        // cannot see the ORDER events are stored in - only which events exist.
+        // The two hashes answer different questions, and when a change moves
+        // one but not the other, that difference is the whole answer.
+        juce::String contentOnly;
         for (auto family : { Family::EDM, Family::MELODIC_TECHNO, Family::PSYTRANCE,
                              Family::URBAN, Family::BREAKS, Family::ARABIC,
                              Family::MEDITERRANEAN, Family::AFRO, Family::CINEMATIC,
@@ -711,16 +716,48 @@ int main()
                                 LoopGenerator::deriveSeed (0xF0F0, i),
                                 LoopGenerator::deriveSeed (0x0E0E, i), s));
                         all << p.signature() << '|';
+                        juce::StringArray perEvent;
                         for (const auto& e : p.events)
+                        {
+                            const auto desc = juce::String (e.pos, 4) + ","
+                                + juce::String ((int) e.role) + ","
+                                + juce::String (e.velocity, 4) + ","
+                                + juce::String (e.microMs, 3) + ","
+                                + juce::String (e.pitchSemis) + ","
+                                + juce::String ((int) e.gateSteps);
                             all << juce::String (e.velocity, 4) << ','
                                 << juce::String (e.microMs, 3) << ','
                                 << e.pitchSemis << ',' << (int) e.gateSteps << ';';
+                            perEvent.add (desc);
+                        }
+                        // No signature() here: it walks the events in stored
+                        // order, which is exactly what this hash must not see.
+                        perEvent.sort (true);
+                        contentOnly << perEvent.joinIntoString (";") << '\n';
                     }
         const juce::int64 hash = all.hashCode64();
-        const juce::int64 golden = 3514363310548923428LL;   // recorded 2026-08-13, v0.9.0
+        const juce::int64 contentHash = contentOnly.hashCode64();
+        // Re-recorded 2026-08-15, when every sort over events was given a
+        // total order. The previous value, 3514363310548923428, was recorded
+        // on macOS and was never reproducible on Windows: sorting on position
+        // alone left simultaneous hits for libc++ and the MSVC STL to order as
+        // they pleased, and the validator's de-duplication and event-count
+        // trim both keep whichever event they meet first.
+        //
+        // The CONTENT hash was measured on both engines before and after that
+        // change and did NOT move: 2010191849257386728 either way. So engine 1
+        // still generates exactly the same music - the same hits, velocities,
+        // micro-timing, pitches and gates - and only the order it stores
+        // simultaneous hits in became defined instead of accidental.
+        const juce::int64 golden = 1072853563969641616LL;
+        const juce::int64 goldenContent = 2010191849257386728LL;
         if (hash != golden)
             std::cout << "  v1 characterization hash: " << hash << "\n";
+        if (contentHash != goldenContent)
+            std::cout << "  v1 CONTENT hash: " << contentHash << "\n";
         check (hash == golden, "ENGINE 1 IS FROZEN - characterization hash unchanged");
+        check (contentHash == goldenContent,
+               "ENGINE 1 IS FROZEN - pattern content unchanged");
     }
 
     // --- transition drama: BUILD countdown + gap, BREAK reverse swell ---------------

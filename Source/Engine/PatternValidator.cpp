@@ -38,10 +38,18 @@ Pattern PatternValidator::validate (Pattern p)
     const size_t maxEvents = (size_t) (steps * 5 / 2);
     if (p.events.size() > maxEvents)
     {
-        std::stable_sort (p.events.begin(), p.events.end(),
+        // Least important events fall off the end, so which events survive
+        // depends on this order - it has to be total, or two equally loud
+        // hits are dropped differently on different standard libraries.
+        std::sort (p.events.begin(), p.events.end(),
             [] (const Event& a, const Event& b)
-            { return (a.protectedAnchor ? 1 : 0) + a.velocity
-                   > (b.protectedAnchor ? 1 : 0) + b.velocity; });
+            {
+                const float ka = (a.protectedAnchor ? 1.0f : 0.0f) + a.velocity;
+                const float kb = (b.protectedAnchor ? 1.0f : 0.0f) + b.velocity;
+                if (ka != kb)
+                    return ka > kb;
+                return eventBefore (a, b);
+            });
         p.events.resize (maxEvents);
     }
 
@@ -83,8 +91,7 @@ Pattern PatternValidator::validate (Pattern p)
         p.events.insert (p.events.begin(), e);
     }
 
-    std::sort (p.events.begin(), p.events.end(),
-               [] (const Event& a, const Event& b) { return a.pos < b.pos; });
+    std::sort (p.events.begin(), p.events.end(), eventBefore);
     return p;
 }
 
