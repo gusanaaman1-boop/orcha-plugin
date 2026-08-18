@@ -74,18 +74,18 @@ void OptionCard::paint (juce::Graphics& g)
     auto bounds = getLocalBounds().toFloat().reduced (1.0f);
     g.setColour (theme::panel);
     g.fillRoundedRectangle (bounds, 8.0f);
-    // Every card is a lit sign in its own colour - dim when idle, hot when
-    // playing, amber when it is a favorite.
-    if (present)
-    {
-        const auto tint = favorite ? theme::amber : theme::waveColour (index);
-        theme::neonRect (g, bounds.reduced (1.5f), 7.0f, tint,
-                         playing ? 1.3f : favorite ? 0.75f : 0.45f);
-    }
+    // Neon means ONE light source in a dark room. Twelve glowing frames at
+    // once read as strain (tried, rejected). Idle cards stay quiet - a thin
+    // outline, faintly tinted; only the playing card lights up, and a
+    // favorite gets a calm amber edge.
+    if (playing)
+        theme::neonRect (g, bounds.reduced (1.5f), 7.0f,
+                         theme::waveColour (index), 1.0f);
     else
     {
-        g.setColour (theme::outline);
-        g.drawRoundedRectangle (bounds, 8.0f, 1.0f);
+        g.setColour (favorite ? theme::amber.withAlpha (0.7f)
+                              : theme::waveColour (index).withAlpha (0.22f));
+        g.drawRoundedRectangle (bounds, 8.0f, favorite ? 1.3f : 1.0f);
     }
 
     if (! present)
@@ -98,8 +98,14 @@ void OptionCard::paint (juce::Graphics& g)
 
     // Play / stop.
     auto pa = playArea();
-    g.setColour (theme::panelLight);
+    g.setColour (playing ? theme::waveColour (index).withAlpha (0.22f)
+                         : theme::panelLight);
     g.fillEllipse (pa);
+    if (playing)
+    {
+        g.setColour (theme::waveColour (index).withAlpha (0.6f));
+        g.drawEllipse (pa.reduced (0.5f), 1.0f);
+    }
     g.setColour (ready ? theme::text : theme::textDim);
     if (! ready)
     {

@@ -184,13 +184,13 @@ void OrchaAudioProcessorEditor::paint (juce::Graphics& g)
     // below. Subtle on purpose - it is the difference between a flat black
     // panel and a lit room, and it makes every glow above it read as light.
     {
-        juce::ColourGradient top (theme::turquoise.withAlpha (0.16f),
+        juce::ColourGradient top (theme::turquoise.withAlpha (0.08f),
                                   (float) getWidth() * 0.5f, 0.0f,
                                   theme::turquoise.withAlpha (0.0f),
                                   (float) getWidth() * 0.5f, 260.0f, false);
         g.setGradientFill (top);
         g.fillRect (0, 0, getWidth(), 260);
-        juce::ColourGradient floor (theme::amber.withAlpha (0.11f),
+        juce::ColourGradient floor (theme::amber.withAlpha (0.05f),
                                     (float) getWidth() * 0.5f, (float) getHeight(),
                                     theme::amber.withAlpha (0.0f),
                                     (float) getWidth() * 0.5f,

@@ -19,8 +19,8 @@ void neonRect (juce::Graphics& g, juce::Rectangle<float> r, float corner,
     // Widening strokes with falling alpha read as bloom on a dark ground.
     // Four layers, wider and hotter than a hint: this is the neon the user
     // asked for, not a suggestion of it.
-    const float widths[4] = { 14.0f, 9.0f, 5.0f, 2.5f };
-    const float alphas[4] = { 0.10f, 0.18f, 0.32f, 0.55f };
+    const float widths[4] = { 10.0f, 6.0f, 3.5f, 2.0f };
+    const float alphas[4] = { 0.08f, 0.16f, 0.30f, 0.50f };
     for (int i = 0; i < 4; ++i)
     {
         g.setColour (colour.withAlpha (juce::jmin (1.0f, alphas[i] * strength)));
@@ -78,19 +78,13 @@ void paintWaveform (juce::Graphics& g, juce::Rectangle<float> area,
     // waveform into a small neon sign - then the crisp core.
     // Two halo passes - a wide soft one and a tighter hotter one - then the
     // crisp core. The wave becomes a lit tube, not a bar chart.
-    g.setColour (colour.withAlpha (0.16f));
+    g.setColour (colour.withAlpha (0.22f));
     for (int x = 0; x < columns; ++x)
     {
-        const float h = juce::jmax (1.0f, peaks[(size_t) x] * halfH) + 5.0f;
-        g.fillRect (area.getX() + (float) x - 2.5f, midY - h, 6.0f, h * 2.0f);
+        const float h = juce::jmax (1.0f, peaks[(size_t) x] * halfH) + 2.5f;
+        g.fillRect (area.getX() + (float) x - 1.5f, midY - h, 4.0f, h * 2.0f);
     }
-    g.setColour (colour.withAlpha (0.38f));
-    for (int x = 0; x < columns; ++x)
-    {
-        const float h = juce::jmax (1.0f, peaks[(size_t) x] * halfH) + 2.0f;
-        g.fillRect (area.getX() + (float) x - 1.0f, midY - h, 3.0f, h * 2.0f);
-    }
-    g.setColour (colour.brighter (0.15f));
+    g.setColour (colour);
     for (int x = 0; x < columns; ++x)
     {
         const float h = juce::jmax (1.0f, peaks[(size_t) x] * halfH);
@@ -181,10 +175,17 @@ void OrchaLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& bu
         neonRect (g, bounds.reduced (1.0f), 5.0f,
                   colour.getPerceivedBrightness() > 0.45f ? colour
                                                           : amberBright,
-                  highlighted || down ? 1.15f : 0.95f);
+                  highlighted || down ? 0.85f : 0.55f);
+    else if (highlighted)
+    {
+        // Hover: a quiet lift, not a glow - the eye should find the button
+        // without the whole strip lighting up under the cursor.
+        g.setColour (textDim.withAlpha (0.7f));
+        g.drawRoundedRectangle (bounds, 6.0f, 1.0f);
+    }
     else
     {
-        g.setColour (highlighted ? textDim : outline);
+        g.setColour (outline.withAlpha (0.8f));
         g.drawRoundedRectangle (bounds, 6.0f, 1.0f);
     }
 }
