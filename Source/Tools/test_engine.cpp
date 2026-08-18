@@ -1341,11 +1341,16 @@ int main()
                     if (std::fmod (e.pos, 4.0) < 0.01 || e.roll
                         || std::abs (e.pos - std::round (e.pos)) > 0.01)
                         continue;
+                    // Rolls are exempt on both sides of the count: the stack
+                    // rule guards the groove's TEXTURE, and a fill gesture
+                    // passing through an off-beat (the accelerating roll, a
+                    // touch, a micro-riser) is an event, not a texture.
                     int rolesHere = 0;
                     for (int rr = 0; rr < 5; ++rr)
                     {
                         for (const auto& o : p.events)
-                            if ((int) o.role == rr && std::abs (o.pos - e.pos) < 0.26)
+                            if ((int) o.role == rr && ! o.roll
+                                && std::abs (o.pos - e.pos) < 0.26)
                             {
                                 ++rolesHere;
                                 break;
@@ -1904,6 +1909,122 @@ int main()
         std::cout << "  render benchmark: 12 cards in "
                   << juce::String (ms, 1) << " ms\n";
         check (! timingIsMeaningful || ms < 4000.0, "12-card render inside budget");
+    }
+
+    // === sparse fill gestures + micro-risers =====================================
+    // The fill vocabulary is not only wall-to-wall rolls: touches leave real
+    // space in the final bar (with the "and" of 4 cleared so the bar breathes
+    // before the one), pickups leave air then throw, and micro-risers start
+    // LOW and climb HIGH on a 1/16 grid that tightens into 1/32s.
+    {
+        GeneratorSettings s;
+        s.bars = 2;
+        s.energy = 0.7f;
+        s.density = 0.5f;
+        s.randomness = 0.3f;
+        TraitsByRole tr {};
+
+        int risers = 0, riser32 = 0, lowToHigh = 0;
+        int touches = 0, breaths = 0, pickups = 0;
+        for (int i = 0; i < 120; ++i)
+            for (Mode m : { Mode::BREAK, Mode::GROOVE, Mode::BUILD })
+            {
+                s.mode = m;
+                const auto p = PatternValidator::validate (
+                    LoopGenerator::generateV2 (
+                        LoopGenerator::deriveSeed (0x515E, i * 4 + (int) m),
+                        LoopGenerator::deriveSeed (0xE515, i * 4 + (int) m), s, tr));
+                const double steps = p.stepCount();
+
+                // Riser: >=3 roll events of one role, spacing <= 1/16, with
+                // velocity rising and pitch climbing from below zero.
+                for (Role role : { Role::MID, Role::HIGH })
+                {
+                    std::vector<const Event*> run;
+                    for (const auto& e : p.events)
+                        if (e.roll && e.role == role && e.pitchSemis != 0)
+                            run.push_back (&e);
+                    if (run.size() < 3)
+                        continue;
+                    bool ascendingVel = true, ascendingPitch = true, tight = true;
+                    bool spacing32 = false;
+                    for (size_t k = 1; k < run.size(); ++k)
+                    {
+                        const double gap = run[k]->pos - run[k - 1]->pos;
+                        if (gap > 1.01)
+                            tight = false;
+                        if (gap < 0.51)
+                            spacing32 = true;
+                        if (run[k]->velocity < run[k - 1]->velocity - 1.0e-4f)
+                            ascendingVel = false;
+                        if (run[k]->pitchSemis < run[k - 1]->pitchSemis)
+                            ascendingPitch = false;
+                    }
+                    if (tight && ascendingVel && ascendingPitch)
+                    {
+                        ++risers;
+                        if (spacing32)
+                            ++riser32;
+                        if (run.front()->pitchSemis < 0 && run.back()->pitchSemis > 0)
+                            ++lowToHigh;
+                    }
+                }
+
+                // Touch fill: the final bar holds a small number of isolated
+                // roll hits with >= a 16th of space between them, and nothing
+                // but anchors in the last half-step before the one.
+                if (m != Mode::BUILD)
+                {
+                    std::vector<double> rollPos;
+                    for (const auto& e : p.events)
+                        if (e.roll && e.pos >= steps - 4.0 && e.pitchSemis == 0)
+                            rollPos.push_back (e.pos);
+                    std::sort (rollPos.begin(), rollPos.end());
+                    bool spaced = rollPos.size() >= 2 && rollPos.size() <= 3;
+                    for (size_t k = 1; spaced && k < rollPos.size(); ++k)
+                        spaced = rollPos[k] - rollPos[k - 1] >= 0.98;
+                    if (spaced)
+                    {
+                        ++touches;
+                        bool clear = true;
+                        for (const auto& e : p.events)
+                            if (e.pos >= steps - 0.75 && ! e.protectedAnchor)
+                                clear = false;
+                        if (clear)
+                            ++breaths;
+                    }
+                    // Pickup: 1/32-grid hits leaning into the restart with
+                    // nothing else (bar anchors) in the two steps before.
+                    int throwHits = 0, other = 0;
+                    for (const auto& e : p.events)
+                        if (e.pos >= steps - 2.0)
+                        {
+                            if (e.roll && e.gateSteps == 0.5 && e.pitchSemis == 0)
+                                ++throwHits;
+                            else if (! e.protectedAnchor)
+                                ++other;
+                        }
+                    if (throwHits >= 1 && other == 0)
+                        ++pickups;
+                }
+            }
+
+        check (risers > 0, "micro-risers appear");
+        check (riser32 > 0, "some risers tighten into 1/32s");
+        check (lowToHigh > 0, "risers start below zero and end above it");
+        check (touches > 0, "touch fills appear in BREAK/GROOVE");
+        check (breaths > 0, "touch fills leave the 'and' of 4 empty");
+        check (pickups > 0, "pickup-only endings appear");
+
+        // Determinism: the new gestures come entirely from the seeds.
+        s.mode = Mode::BUILD;
+        const auto a = LoopGenerator::generateV2 (
+            LoopGenerator::deriveSeed (0x515E, 7), LoopGenerator::deriveSeed (0xE515, 7), s, tr);
+        const auto b = LoopGenerator::generateV2 (
+            LoopGenerator::deriveSeed (0x515E, 7), LoopGenerator::deriveSeed (0xE515, 7), s, tr);
+        check (a.signature() == b.signature()
+               && a.events.size() == b.events.size(),
+               "gesture choice is deterministic");
     }
 
     // === B4: chained phrase - FX tails must cross the card boundary ==============

@@ -796,37 +796,130 @@ Pattern LoopGenerator::generateV2 (juce::uint64 motifSeed, juce::uint64 ornament
 
     if (! planVacuum && rng.chance (fillP))
     {
-        // A weak-transient sample cannot articulate a roll: the roll goes to
-        // the other voice (and if both are weak, the fill is skipped by the
-        // spacing pass below - swells serve those samples instead).
+        // Which GESTURE closes the phrase. A fill does not have to cover the
+        // whole bar: sparse-drumming practice and film percussion both place
+        // a few well-chosen hits and leave the rest as air - the space reads
+        // as groove where a wall-to-wall roll reads as filler. Three shapes:
+        //   FullRoll - the classic roll into the downbeat (v1 vocabulary)
+        //   Touches  - two or three isolated hits in the final bar with real
+        //              space between them, and the "and" of beat 4 cleared
+        //              on purpose, so the bar breathes before the one
+        //   Pickup   - air until a short 1-3 hit throw right before the
+        //              loop restarts
+        // BUILD keeps the accelerating roll: its whole job is momentum.
+        enum class FillGesture { FullRoll, Touches, Pickup };
+        FillGesture gesture = FillGesture::FullRoll;
+        if (settings.mode != Mode::BUILD)
+        {
+            const float g = rng.uni();
+            if (settings.mode == Mode::BREAK || settings.mode == Mode::GROOVE)
+                gesture = g < 0.40f ? FillGesture::Touches
+                        : g < 0.62f ? FillGesture::Pickup
+                                    : FillGesture::FullRoll;
+            else
+                gesture = g < 0.30f ? FillGesture::Touches : FillGesture::FullRoll;
+        }
+
+        // A weak-transient sample cannot articulate a roll: the gesture goes
+        // to the other voice (and if both are weak, the fill is skipped by
+        // the spacing pass below - swells serve those samples instead).
         Role rollRole = rng.chance (0.4f) ? Role::MID : Role::HIGH;
         if (traits[(size_t) rollRole].weakTransient)
             rollRole = rollRole == Role::MID ? Role::HIGH : Role::MID;
-        const int rollSteps = 2 + rng.pick (settings.mode == Mode::BUILD ? 3 : 2);
-        const double rollStart = steps - rollSteps;
-        p.events.erase (std::remove_if (p.events.begin(), p.events.end(),
-            [&] (const Event& e)
-            { return e.pos >= rollStart && e.role == rollRole && ! e.protectedAnchor; }),
-            p.events.end());
 
-        const bool accelerate = settings.mode == Mode::BUILD;
-        double spacing = accelerate ? 0.9 : rng.chance (0.3f) ? 1.0 / 3.0 : 0.5;
-        double pos = rollStart;
-        while (pos < steps - 0.25)
+        if (gesture == FillGesture::FullRoll)
         {
-            Event e;
-            e.pos = pos;
-            e.role = rollRole;
-            e.roll = true;
-            const float t = (float) (pos - rollStart) / (float) rollSteps;
-            e.velocity = juce::jlimit (0.1f, 1.0f, 0.35f + 0.6f * t * (0.5f + 0.5f * energy));
-            e.gateSteps = spacing;
-            if (settings.mode == Mode::BUILD)
-                e.pitchSemis = (int) (t * (3.0f + 5.0f * energy));
-            p.events.push_back (e);
-            pos += spacing;
-            if (accelerate)
-                spacing = juce::jmax (0.25, spacing * 0.8);
+            const int rollSteps = 2 + rng.pick (settings.mode == Mode::BUILD ? 3 : 2);
+            const double rollStart = steps - rollSteps;
+            p.events.erase (std::remove_if (p.events.begin(), p.events.end(),
+                [&] (const Event& e)
+                { return e.pos >= rollStart && e.role == rollRole && ! e.protectedAnchor; }),
+                p.events.end());
+
+            const bool accelerate = settings.mode == Mode::BUILD;
+            double spacing = accelerate ? 0.9 : rng.chance (0.3f) ? 1.0 / 3.0 : 0.5;
+            double pos = rollStart;
+            while (pos < steps - 0.25)
+            {
+                Event e;
+                e.pos = pos;
+                e.role = rollRole;
+                e.roll = true;
+                const float t = (float) (pos - rollStart) / (float) rollSteps;
+                e.velocity = juce::jlimit (0.1f, 1.0f, 0.35f + 0.6f * t * (0.5f + 0.5f * energy));
+                e.gateSteps = spacing;
+                if (settings.mode == Mode::BUILD)
+                    e.pitchSemis = (int) (t * (3.0f + 5.0f * energy));
+                p.events.push_back (e);
+                pos += spacing;
+                if (accelerate)
+                    spacing = juce::jmax (0.25, spacing * 0.8);
+            }
+        }
+        else if (gesture == FillGesture::Touches)
+        {
+            // The final bar keeps its anchors; this role's decoration clears
+            // out and a few touches take its place, ON musically strong spots
+            // that are NOT the downbeat and NOT the "and" of 4.
+            const double barStart = steps - 4.0;
+            p.events.erase (std::remove_if (p.events.begin(), p.events.end(),
+                [&] (const Event& e)
+                { return e.pos >= barStart && e.role == rollRole && ! e.protectedAnchor; }),
+                p.events.end());
+
+            static constexpr double menu[5] = { 0.5, 1.0, 2.0, 2.5, 3.0 };
+            const int count = 2 + rng.pick (2);        // 2-3 touches
+            int idx = rng.pick (2);                    // enter early or mid-bar
+            const Role alt = rollRole == Role::MID ? Role::HIGH : Role::MID;
+            double lastPlaced = -9.0;
+            int placed = 0;
+            for (int k = 0; k < count && idx < 5; ++k)
+            {
+                const double pos = barStart + menu[idx];
+                if (pos - lastPlaced >= 0.99 && ! stepOccupied (p.events, pos))
+                {
+                    Event e;
+                    e.pos = pos;
+                    e.role = (placed % 2 == 1 && ! traits[(size_t) alt].weakTransient)
+                                 ? alt : rollRole;
+                    e.roll = true;
+                    e.velocity = 0.45f + 0.14f * (float) placed + 0.1f * rng.uni();
+                    e.gateSteps = 1.0;
+                    p.events.push_back (e);
+                    lastPlaced = pos;
+                    ++placed;
+                }
+                idx += 1 + rng.pick (2);
+            }
+            // The breath: nothing but anchors may sit on the "and" of beat 4.
+            // An empty half-step right before the one is what makes the
+            // touches read as intention instead of a thin roll.
+            p.events.erase (std::remove_if (p.events.begin(), p.events.end(),
+                [steps] (const Event& e)
+                { return e.pos >= steps - 0.75 && ! e.protectedAnchor; }),
+                p.events.end());
+        }
+        else // FillGesture::Pickup
+        {
+            // Air first, then the throw: the last two steps empty out except
+            // anchors, and a 1-3 hit pickup on the 1/32 grid leans into the
+            // loop restart with rising weight.
+            p.events.erase (std::remove_if (p.events.begin(), p.events.end(),
+                [steps] (const Event& e)
+                { return e.pos >= steps - 2.0 && ! e.protectedAnchor; }),
+                p.events.end());
+            const int hits = 1 + rng.pick (3);         // 1-3
+            for (int k = 0; k < hits; ++k)
+            {
+                Event e;
+                e.pos = steps - 0.5 * (hits - k);
+                e.role = rollRole;
+                e.roll = true;
+                e.velocity = juce::jlimit (0.2f, 1.0f,
+                    0.45f + 0.55f * (float) (k + 1) / (float) hits);
+                e.gateSteps = 0.5;
+                p.events.push_back (e);
+            }
         }
     }
 
@@ -897,6 +990,59 @@ Pattern LoopGenerator::generateV2 (juce::uint64 motifSeed, juce::uint64 ornament
                 deep.pitchSemis = -5;
                 deep.gateSteps = 3.0;
                 p.events.push_back (deep);
+            }
+        }
+    }
+
+    // --- 9a. micro-risers ------------------------------------------------------
+    // A short run that starts LOW and climbs HIGH: 1/16s tightening into
+    // 1/32s, velocity soft-to-full, pitch walking up a few semitones - the
+    // snare-rush gesture at loop scale. It always ends ON a boundary (the
+    // loop restart, or the half-phrase of a 4-bar loop) so the rise throws
+    // into an arrival instead of hanging in the air. DROP is excluded: its
+    // job is release, and it already breathes a hole at the phrase end.
+    if (settings.mode != Mode::DROP && ! planVacuum)
+    {
+        const bool wantRiser =
+            settings.mode == Mode::BUILD  ? rng.chance (0.5f + 0.3f * energy)
+          : settings.mode == Mode::BREAK  ? rng.chance (0.25f)
+                                          : rng.chance (0.18f);   // GROOVE
+        if (wantRiser)
+        {
+            Role riserRole = rng.chance (0.6f) ? Role::MID : Role::HIGH;
+            if (traits[(size_t) riserRole].weakTransient)
+                riserRole = riserRole == Role::MID ? Role::HIGH : Role::MID;
+
+            const double target = (bars == 4 && rng.chance (0.4f))
+                                      ? 32.0 : (double) steps;
+            const double runLen = 2.0 + rng.pick (3);   // 2-4 steps of run
+            const bool tighten = rng.chance (0.65f);    // 1/16 -> 1/32 accel
+            double spacing = tighten ? 1.0
+                           : rng.chance (0.5f) ? 1.0 : 0.5;
+            const int lowStart = -4 - rng.pick (3);
+            const int highEnd = 4 + juce::roundToInt (4.0f * energy);
+
+            std::vector<double> at;
+            for (double pos = target - runLen; pos < target - 0.26; )
+            {
+                at.push_back (pos);
+                pos += spacing;
+                if (tighten)
+                    spacing = juce::jmax (0.5, spacing * 0.7);
+            }
+            for (size_t k = 0; k < at.size(); ++k)
+            {
+                const float t = at.size() > 1
+                    ? (float) k / (float) (at.size() - 1) : 1.0f;
+                Event e;
+                e.pos = at[k];
+                e.role = riserRole;
+                e.roll = true;
+                e.velocity = juce::jlimit (0.1f, 1.0f, 0.3f + 0.65f * t);
+                e.pitchSemis = juce::roundToInt (
+                    (float) lowStart + t * (float) (highEnd - lowStart));
+                e.gateSteps = 0.5;
+                p.events.push_back (e);
             }
         }
     }
