@@ -17,23 +17,25 @@ void neonRect (juce::Graphics& g, juce::Rectangle<float> r, float corner,
                juce::Colour colour, float strength)
 {
     // Widening strokes with falling alpha read as bloom on a dark ground.
-    const float widths[3] = { 7.0f, 4.0f, 2.0f };
-    const float alphas[3] = { 0.10f, 0.20f, 0.42f };
-    for (int i = 0; i < 3; ++i)
+    // Four layers, wider and hotter than a hint: this is the neon the user
+    // asked for, not a suggestion of it.
+    const float widths[4] = { 14.0f, 9.0f, 5.0f, 2.5f };
+    const float alphas[4] = { 0.10f, 0.18f, 0.32f, 0.55f };
+    for (int i = 0; i < 4; ++i)
     {
         g.setColour (colour.withAlpha (juce::jmin (1.0f, alphas[i] * strength)));
         g.drawRoundedRectangle (r.expanded (widths[i] * 0.35f), corner + widths[i] * 0.3f,
                                 widths[i]);
     }
-    g.setColour (colour.withAlpha (juce::jmin (1.0f, 0.9f * strength)));
-    g.drawRoundedRectangle (r, corner, 1.4f);
+    g.setColour (colour.brighter (0.25f).withAlpha (juce::jmin (1.0f, 0.95f * strength)));
+    g.drawRoundedRectangle (r, corner, 1.6f);
 }
 
 void neonPath (juce::Graphics& g, const juce::Path& path, juce::Colour colour,
                float strength)
 {
-    const float widths[3] = { 6.0f, 3.5f, 1.8f };
-    const float alphas[3] = { 0.10f, 0.20f, 0.45f };
+    const float widths[3] = { 10.0f, 5.5f, 2.5f };
+    const float alphas[3] = { 0.16f, 0.30f, 0.55f };
     for (int i = 0; i < 3; ++i)
     {
         g.setColour (colour.withAlpha (juce::jmin (1.0f, alphas[i] * strength)));
@@ -74,13 +76,21 @@ void paintWaveform (juce::Graphics& g, juce::Rectangle<float> area,
 
     // Halo pass first - a wide translucent copy behind the bars turns each
     // waveform into a small neon sign - then the crisp core.
-    g.setColour (colour.withAlpha (0.20f));
+    // Two halo passes - a wide soft one and a tighter hotter one - then the
+    // crisp core. The wave becomes a lit tube, not a bar chart.
+    g.setColour (colour.withAlpha (0.16f));
+    for (int x = 0; x < columns; ++x)
+    {
+        const float h = juce::jmax (1.0f, peaks[(size_t) x] * halfH) + 5.0f;
+        g.fillRect (area.getX() + (float) x - 2.5f, midY - h, 6.0f, h * 2.0f);
+    }
+    g.setColour (colour.withAlpha (0.38f));
     for (int x = 0; x < columns; ++x)
     {
         const float h = juce::jmax (1.0f, peaks[(size_t) x] * halfH) + 2.0f;
         g.fillRect (area.getX() + (float) x - 1.0f, midY - h, 3.0f, h * 2.0f);
     }
-    g.setColour (colour);
+    g.setColour (colour.brighter (0.15f));
     for (int x = 0; x < columns; ++x)
     {
         const float h = juce::jmax (1.0f, peaks[(size_t) x] * halfH);
@@ -132,8 +142,11 @@ void OrchaLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int w,
     value.addCentredArc (centre.x, centre.y, radius - 3.0f, radius - 3.0f,
                          0.0f, startAngle, angle, true);
     // The value arc is the knob's neon tube: bloom first, crisp core on top.
-    g.setColour (amber.withAlpha (0.30f));
-    g.strokePath (value, juce::PathStrokeType (5.5f, juce::PathStrokeType::curved,
+    g.setColour (amber.withAlpha (0.22f));
+    g.strokePath (value, juce::PathStrokeType (9.0f, juce::PathStrokeType::curved,
+                                               juce::PathStrokeType::rounded));
+    g.setColour (amber.withAlpha (0.45f));
+    g.strokePath (value, juce::PathStrokeType (5.0f, juce::PathStrokeType::curved,
                                                juce::PathStrokeType::rounded));
     g.setColour (amberBright);
     g.strokePath (value, juce::PathStrokeType (2.2f, juce::PathStrokeType::curved,
@@ -168,7 +181,7 @@ void OrchaLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& bu
         neonRect (g, bounds.reduced (1.0f), 5.0f,
                   colour.getPerceivedBrightness() > 0.45f ? colour
                                                           : amberBright,
-                  highlighted || down ? 1.0f : 0.75f);
+                  highlighted || down ? 1.15f : 0.95f);
     else
     {
         g.setColour (highlighted ? textDim : outline);

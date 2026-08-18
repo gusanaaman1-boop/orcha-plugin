@@ -74,15 +74,18 @@ void OptionCard::paint (juce::Graphics& g)
     auto bounds = getLocalBounds().toFloat().reduced (1.0f);
     g.setColour (theme::panel);
     g.fillRoundedRectangle (bounds, 8.0f);
-    if (playing)
-        // The playing card is the room's light source: its frame glows in
-        // its own waveform colour.
-        theme::neonRect (g, bounds.reduced (1.5f), 7.0f,
-                         theme::waveColour (index), 0.9f);
+    // Every card is a lit sign in its own colour - dim when idle, hot when
+    // playing, amber when it is a favorite.
+    if (present)
+    {
+        const auto tint = favorite ? theme::amber : theme::waveColour (index);
+        theme::neonRect (g, bounds.reduced (1.5f), 7.0f, tint,
+                         playing ? 1.3f : favorite ? 0.75f : 0.45f);
+    }
     else
     {
-        g.setColour (favorite ? theme::amber.withAlpha (0.55f) : theme::outline);
-        g.drawRoundedRectangle (bounds, 8.0f, favorite ? 1.3f : 1.0f);
+        g.setColour (theme::outline);
+        g.drawRoundedRectangle (bounds, 8.0f, 1.0f);
     }
 
     if (! present)

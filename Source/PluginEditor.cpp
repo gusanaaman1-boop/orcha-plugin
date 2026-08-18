@@ -184,13 +184,13 @@ void OrchaAudioProcessorEditor::paint (juce::Graphics& g)
     // below. Subtle on purpose - it is the difference between a flat black
     // panel and a lit room, and it makes every glow above it read as light.
     {
-        juce::ColourGradient top (theme::turquoise.withAlpha (0.055f),
+        juce::ColourGradient top (theme::turquoise.withAlpha (0.16f),
                                   (float) getWidth() * 0.5f, 0.0f,
                                   theme::turquoise.withAlpha (0.0f),
                                   (float) getWidth() * 0.5f, 260.0f, false);
         g.setGradientFill (top);
         g.fillRect (0, 0, getWidth(), 260);
-        juce::ColourGradient floor (theme::amber.withAlpha (0.035f),
+        juce::ColourGradient floor (theme::amber.withAlpha (0.11f),
                                     (float) getWidth() * 0.5f, (float) getHeight(),
                                     theme::amber.withAlpha (0.0f),
                                     (float) getWidth() * 0.5f,
@@ -237,12 +237,14 @@ void OrchaAudioProcessorEditor::paint (juce::Graphics& g)
         const float tw = juce::GlyphArrangement::getStringWidth (theme::heading (26.0f), "ORCHA");
         const float ux = (float) header.getX() + 46.0f;
         const float uy = (float) header.getBottom() - 3.0f;
-        g.setColour (theme::turquoise.withAlpha (0.12f));
+        g.setColour (theme::turquoise.withAlpha (0.14f));
+        g.fillRoundedRectangle (ux - 4.0f, uy - 4.0f, tw + 8.0f, 9.0f, 4.5f);
+        g.setColour (theme::turquoise.withAlpha (0.28f));
         g.fillRoundedRectangle (ux - 2.0f, uy - 2.0f, tw + 4.0f, 5.0f, 2.5f);
-        g.setColour (theme::turquoise.withAlpha (0.30f));
+        g.setColour (theme::turquoise.withAlpha (0.55f));
         g.fillRoundedRectangle (ux - 1.0f, uy - 1.0f, tw + 2.0f, 3.0f, 1.5f);
-        g.setColour (theme::turquoise.withAlpha (0.75f));
-        g.fillRoundedRectangle (ux, uy, tw, 1.2f, 0.6f);
+        g.setColour (theme::turquoise.brighter (0.3f));
+        g.fillRoundedRectangle (ux, uy, tw, 1.4f, 0.7f);
     }
 
     g.setColour (theme::turquoise);
@@ -281,12 +283,14 @@ void OrchaAudioProcessorEditor::paint (juce::Graphics& g)
     {
         if (w <= 0.0f)
             return;
-        g.setColour (theme::turquoise.withAlpha (0.10f));
+        g.setColour (theme::turquoise.withAlpha (0.12f));
+        g.fillRect (x, y - 4.0f, w, 9.0f);
+        g.setColour (theme::turquoise.withAlpha (0.24f));
         g.fillRect (x, y - 2.0f, w, 5.0f);
-        g.setColour (theme::turquoise.withAlpha (0.22f));
+        g.setColour (theme::turquoise.withAlpha (0.45f));
         g.fillRect (x, y - 1.0f, w, 3.0f);
-        g.setColour (theme::turquoise.withAlpha (0.55f));
-        g.fillRect (x, y, w, 1.0f);
+        g.setColour (theme::turquoise.brighter (0.3f));
+        g.fillRect (x, y, w, 1.2f);
     };
     glowLine ((float) divider.getX(), (float) dividerY + 10.0f,
               (float) (divider.getWidth() / 2 - textW / 2));
