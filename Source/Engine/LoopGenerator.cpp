@@ -575,7 +575,7 @@ Pattern LoopGenerator::generateV2 (juce::uint64 motifSeed, juce::uint64 ornament
     Motif::Cell cell;
     cell.segLen = motifSegLen;
     {
-        const float densityScale = 0.35f + 1.3f * settings.density;
+        const float densityScale = 0.25f + 1.6f * settings.density;
         const float fillP = juce::jlimit (0.1f, 0.95f,
             profile.baseDensity * style.ornamentDensity * densityScale * 1.4f);
         for (int os : skel.ornamentSteps)
@@ -657,7 +657,7 @@ Pattern LoopGenerator::generateV2 (juce::uint64 motifSeed, juce::uint64 ornament
             // Space-aware texture: a phrase that wants air gets fewer ghosts
             // everywhere, not only in its planned quiet segments.
             const float ghostP = style.ghostiness
-                * (0.18f + 0.45f * settings.density)
+                * (0.12f + 0.8f * settings.density)
                 * traj.at (traj.density, seg) * roleBudget (role)
                 * (1.0f - 0.5f * feel.space);
             if (stepOccupied (p.events, pos) || ! rng.chance (ghostP))
@@ -678,6 +678,39 @@ Pattern LoopGenerator::generateV2 (juce::uint64 motifSeed, juce::uint64 ornament
             g.velocity = 0.10f + 0.15f * rng.uni();
             g.gateSteps = 0.5;
             p.events.push_back (g);
+        }
+
+        // High macro density opens the 1/32 grid: the 16th slots saturate
+        // (measured - the knob's top half moved the loop by three events),
+        // so past 0.6 the ghost layer may also tick BETWEEN the 16ths.
+        // Quieter than the on-grid ghosts, same guards, never in styles
+        // whose ghosts must hug a neighbor.
+        if (settings.density > 0.6f && ! style.ghostsNeedNeighbor
+            && ! traits[(size_t) leadRole].weakTransient)
+        {
+            const float halfP = style.ghostiness * (settings.density - 0.6f) * 1.4f;
+            for (int step = 0; step < steps; ++step)
+            {
+                const double pos = step + 0.5;
+                const int seg = segOf (pos);
+                const auto role = segRole (seg);
+                if (role == PhraseRole::Breath || role == PhraseRole::Vacuum)
+                    continue;
+                if (traj.at (traj.space, seg) > 0.7f)
+                    continue;
+                if (stepOccupied (p.events, pos) || ! rng.chance (halfP))
+                    continue;
+                if (offbeatStackFull (pos))
+                    continue;
+                if (SilencePlanner::blocked (silence, pos, true))
+                    continue;
+                Event g;
+                g.pos = pos;
+                g.role = leadRole;
+                g.velocity = 0.08f + 0.10f * rng.uni();
+                g.gateSteps = 0.4;
+                p.events.push_back (g);
+            }
         }
     }
 
@@ -735,10 +768,15 @@ Pattern LoopGenerator::generateV2 (juce::uint64 motifSeed, juce::uint64 ornament
     {
         const bool onBeat = std::fmod (e.pos, 4.0) < 0.01;
         float v = e.velocity;
+        // The knob has to be FELT: measured before this widening, the whole
+        // ENERGY range moved mean velocity by 0.13 (~2 dB) - inaudible as a
+        // macro. Low energy now genuinely calms the frame, high energy heats
+        // it, and decoration drops much faster than anchors when it falls.
+        v *= 0.82f + 0.36f * energy;
         if (onBeat)
-            v *= 0.85f + 0.35f * energy;
+            v *= 0.78f + 0.45f * energy;
         else
-            v *= 1.0f - profile.velocityContrast * 0.35f * (1.0f - energy);
+            v *= 1.0f - profile.velocityContrast * 0.55f * (1.0f - energy);
 
         const int mapStep = juce::jlimit (0, 15,
             juce::roundToInt (std::floor (e.pos)) % 16);
@@ -761,7 +799,7 @@ Pattern LoopGenerator::generateV2 (juce::uint64 motifSeed, juce::uint64 ornament
             // Correlated performance, not blind jitter (Phase 6). Everything
             // scales with randomness x the family's looseness, so r=0 stays
             // machine-tight (feel offsets only) and psytrance never loosens.
-            const float human = r * feel.looseness * 2.0f;
+            const float human = r * feel.looseness * 3.4f;
             float micro = (rng.uni() * 2.0f - 1.0f) * style.timingVarianceMs * human;
             // Slow breathing across the phrase - deterministic in position.
             micro += std::sin ((float) (e.pos / steps)

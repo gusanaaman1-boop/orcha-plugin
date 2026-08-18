@@ -79,8 +79,55 @@ static InputSample::Ptr makeHit (double freq, double sampleRate, double seconds)
     return s;
 }
 
-int main()
+// Diagnostic: `OrchaTests macros` prints how much each macro knob actually
+// moves the output, measured over 60 seeds per setting. Exists because "I
+// don't feel the knobs doing anything" must be answerable with numbers.
+static int probeMacros()
 {
+    auto probe = [] (const char* name, float GeneratorSettings::* field)
+    {
+        for (float v : { 0.05f, 0.5f, 0.95f })
+        {
+            double events = 0, vel = 0, micro = 0, offgrid = 0;
+            const int N = 60;
+            for (int i = 0; i < N; ++i)
+            {
+                GeneratorSettings s;
+                s.mode = Mode::GROOVE;
+                s.bars = 2;
+                s.*field = v;
+                const auto p = PatternValidator::validate (LoopGenerator::generateV2 (
+                    LoopGenerator::deriveSeed (777, i),
+                    LoopGenerator::deriveSeed (888, i), s));
+                events += (double) p.events.size();
+                for (const auto& e : p.events)
+                {
+                    vel += e.velocity;
+                    micro += std::abs (e.microMs);
+                    if (std::abs (e.pos - std::round (e.pos)) > 0.01)
+                        offgrid += 1;
+                }
+            }
+            const double n = juce::jmax (1.0, events);
+            std::cout << name << "=" << juce::String (v, 2)
+                      << "  events/loop " << juce::String (events / N, 1)
+                      << "  mean-vel " << juce::String (vel / n, 2)
+                      << "  |micro| " << juce::String (micro / n, 1) << "ms"
+                      << "  offgrid/loop " << juce::String (offgrid / N, 1) << "\n";
+        }
+        std::cout << "\n";
+    };
+    probe ("ENERGY", &GeneratorSettings::energy);
+    probe ("DENSITY", &GeneratorSettings::density);
+    probe ("RANDOM", &GeneratorSettings::randomness);
+    return 0;
+}
+
+int main (int argc, char* argv[])
+{
+    if (argc > 1 && juce::String (argv[1]) == "macros")
+        return probeMacros();
+
     const double sr = 48000.0;
 
     // --- analyzer ---------------------------------------------------------------
@@ -1909,6 +1956,53 @@ int main()
         std::cout << "  render benchmark: 12 cards in "
                   << juce::String (ms, 1) << " ms\n";
         check (! timingIsMeaningful || ms < 4000.0, "12-card render inside budget");
+    }
+
+    // === the macro knobs must be FELT ===========================================
+    // User report, v0.15.1: "I don't feel the knobs doing anything." Measured
+    // and confirmed - the whole ENERGY range moved mean velocity ~2 dB and
+    // DENSITY's top half added three events. These floors lock the widened
+    // mappings so the knobs can never quietly go numb again.
+    {
+        auto sweep = [] (float GeneratorSettings::* field, float v)
+        {
+            double events = 0, vel = 0, offgrid = 0;
+            const int N = 40;
+            for (int i = 0; i < N; ++i)
+            {
+                GeneratorSettings s;
+                s.mode = Mode::GROOVE;
+                s.bars = 2;
+                s.*field = v;
+                const auto p = PatternValidator::validate (LoopGenerator::generateV2 (
+                    LoopGenerator::deriveSeed (777, i),
+                    LoopGenerator::deriveSeed (888, i), s));
+                events += (double) p.events.size();
+                for (const auto& e : p.events)
+                {
+                    vel += e.velocity;
+                    if (std::abs (e.pos - std::round (e.pos)) > 0.01)
+                        offgrid += 1;
+                }
+            }
+            struct R { double events, vel, offgrid; };
+            return R { events / N, vel / juce::jmax (1.0, events), offgrid / N };
+        };
+        const auto eLo = sweep (&GeneratorSettings::energy, 0.05f);
+        const auto eHi = sweep (&GeneratorSettings::energy, 0.95f);
+        check (eHi.vel - eLo.vel > 0.18,
+               "ENERGY spans at least 0.18 mean velocity");
+        const auto dLo = sweep (&GeneratorSettings::density, 0.05f);
+        const auto dHi = sweep (&GeneratorSettings::density, 0.95f);
+        check (dHi.events > dLo.events * 1.8,
+               "DENSITY nearly doubles the event count across its range");
+        const auto dMid = sweep (&GeneratorSettings::density, 0.5f);
+        check (dHi.events > dMid.events * 1.2,
+               "DENSITY's top half still adds real events");
+        const auto rLo = sweep (&GeneratorSettings::randomness, 0.05f);
+        const auto rHi = sweep (&GeneratorSettings::randomness, 0.95f);
+        check (rHi.offgrid > rLo.offgrid * 2.5,
+               "RANDOM multiplies off-grid activity");
     }
 
     // === sparse fill gestures + micro-risers =====================================
