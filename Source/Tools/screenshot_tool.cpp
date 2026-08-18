@@ -119,6 +119,69 @@ int main (int argc, char* argv[])
         }
         std::cout << (failuresEarly == 0 ? "REGEN OK" : "REGEN FAILED") << "\n";
 
+        // --- GENERATE must replace EVERY non-favorite, edited or not -----------
+        // The user's report: cards did not change under GENERATE. Cause: an
+        // edited card kept its flag, and enqueueBuild re-rendered the OLD
+        // pattern via the useExisting path. Edit a card, force an ending on
+        // another, favorite a third - then GENERATE. The edited ones must
+        // change, the favorite must not.
+        {
+            int genFailures = 0;
+            auto edited = processor->option (3).pattern;
+            Event extra;
+            extra.pos = 5.0;
+            extra.role = Role::MID;
+            extra.velocity = 0.9f;
+            edited.events.push_back (extra);
+            processor->applyEditedPattern (3, edited);
+            pumpUntil ([&] { return processor->option (3).ready; }, 15000);
+            processor->setOptionEnding (4, 3);   // force ToStop on card 5
+            pumpUntil ([&] { return processor->option (4).ready; }, 15000);
+            if (! processor->option (6).favorite)
+                processor->toggleFavorite (6);
+
+            juce::StringArray before;
+            for (int i = 0; i < OrchaAudioProcessor::numOptions; ++i)
+                before.add (processor->option (i).pattern.signature());
+
+            processor->generateAll();
+            pumpUntil ([&]
+            {
+                if (processor->isGenerating())
+                    return false;
+                for (int i = 0; i < OrchaAudioProcessor::numOptions; ++i)
+                    if (! processor->option (i).ready)
+                        return false;
+                return true;
+            }, 30000);
+
+            for (int i = 0; i < OrchaAudioProcessor::numOptions; ++i)
+            {
+                const bool changed =
+                    processor->option (i).pattern.signature() != before[i];
+                if (i == 6 && changed)
+                {
+                    std::cout << "GENERATE FAIL: favorite card 7 was replaced\n";
+                    ++genFailures;
+                }
+                if (i != 6 && ! changed)
+                {
+                    std::cout << "GENERATE FAIL: card " << (i + 1)
+                              << " did not change\n";
+                    ++genFailures;
+                }
+                if (i != 6 && processor->option (i).edited)
+                {
+                    std::cout << "GENERATE FAIL: card " << (i + 1)
+                              << " still flagged edited\n";
+                    ++genFailures;
+                }
+            }
+            processor->toggleFavorite (6);   // leave no favorites behind
+            failuresEarly += genFailures;
+            std::cout << (genFailures == 0 ? "GENERATE OK" : "GENERATE FAILED") << "\n";
+        }
+
         // --- state round-trip: seeds, favorites, settings must survive ---------
         processor->toggleFavorite (2);
         processor->toggleFavorite (7);

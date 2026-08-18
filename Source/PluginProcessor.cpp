@@ -184,6 +184,13 @@ void OrchaAudioProcessor::generateAll()
         pendingSeeds[(size_t) i] = { LoopGenerator::deriveSeed (master, i),
                                      LoopGenerator::deriveSeed (~master, i), 2 };
         opt.ready = false;
+        // A replaced card is a NEW card. Without this, any card the user had
+        // edited (step edits, CLEAN, ENDING, TRANSITION all set the flag)
+        // took the useExisting path in enqueueBuild and re-rendered its OLD
+        // pattern - it looked frozen under GENERATE, forever.
+        opt.edited = false;
+        opt.endingOverride = -1;
+        opt.fxReverb = opt.fxDelay = opt.fxPump = 0.0f;
         toBuild.push_back (i);
     }
     enqueueBuild (std::move (toBuild), {}, false, true);
@@ -211,7 +218,11 @@ void OrchaAudioProcessor::generateSet()
                                      LoopGenerator::deriveSeed (~master, i), 2,
                                      0, (int) groupModes[i / 3] };
         opt.ready = false;
+        // Same rule as generateAll: a replaced card is a NEW card, so the
+        // edited flag must clear or enqueueBuild re-renders the OLD pattern.
+        opt.edited = false;
         opt.endingOverride = -1;
+        opt.fxReverb = opt.fxDelay = opt.fxPump = 0.0f;
         toBuild.push_back (i);
     }
     enqueueBuild (std::move (toBuild));   // no pool: cohesion IS the point

@@ -1,5 +1,5 @@
 ORCHA — Windows install
-Rhythm Loop Generator · by Gussa Naaman · v0.15.0 · x64
+Rhythm Loop Generator · by Gussa Naaman · v0.15.1 · x64
 
 ------------------------------------------------------------------------------
 INSTALL - this is the whole thing
