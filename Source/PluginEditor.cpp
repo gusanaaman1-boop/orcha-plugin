@@ -180,6 +180,25 @@ void OrchaAudioProcessorEditor::paint (juce::Graphics& g)
 {
     g.fillAll (theme::background);
 
+    // Ambient depth: a cold teal wash from above, a faint warm floor from
+    // below. Subtle on purpose - it is the difference between a flat black
+    // panel and a lit room, and it makes every glow above it read as light.
+    {
+        juce::ColourGradient top (theme::turquoise.withAlpha (0.055f),
+                                  (float) getWidth() * 0.5f, 0.0f,
+                                  theme::turquoise.withAlpha (0.0f),
+                                  (float) getWidth() * 0.5f, 260.0f, false);
+        g.setGradientFill (top);
+        g.fillRect (0, 0, getWidth(), 260);
+        juce::ColourGradient floor (theme::amber.withAlpha (0.035f),
+                                    (float) getWidth() * 0.5f, (float) getHeight(),
+                                    theme::amber.withAlpha (0.0f),
+                                    (float) getWidth() * 0.5f,
+                                    (float) getHeight() - 220.0f, false);
+        g.setGradientFill (floor);
+        g.fillRect (0, getHeight() - 220, getWidth(), 220);
+    }
+
     auto header = getLocalBounds().removeFromTop (44).reduced (16, 4);
 
     // The NAAMAN mark opens the header, big and next to the product name -
@@ -213,6 +232,18 @@ void OrchaAudioProcessorEditor::paint (juce::Graphics& g)
     g.setColour (theme::text);
     g.setFont (theme::heading (26.0f));
     g.drawText ("ORCHA", header.withTrimmedLeft (46), juce::Justification::centredLeft);
+    // The name gets a neon signature: a short turquoise light-tube under it.
+    {
+        const float tw = juce::GlyphArrangement::getStringWidth (theme::heading (26.0f), "ORCHA");
+        const float ux = (float) header.getX() + 46.0f;
+        const float uy = (float) header.getBottom() - 3.0f;
+        g.setColour (theme::turquoise.withAlpha (0.12f));
+        g.fillRoundedRectangle (ux - 2.0f, uy - 2.0f, tw + 4.0f, 5.0f, 2.5f);
+        g.setColour (theme::turquoise.withAlpha (0.30f));
+        g.fillRoundedRectangle (ux - 1.0f, uy - 1.0f, tw + 2.0f, 3.0f, 1.5f);
+        g.setColour (theme::turquoise.withAlpha (0.75f));
+        g.fillRoundedRectangle (ux, uy, tw, 1.2f, 0.6f);
+    }
 
     g.setColour (theme::turquoise);
     g.setFont (theme::label (12.0f));
@@ -237,17 +268,30 @@ void OrchaAudioProcessorEditor::paint (juce::Graphics& g)
                     juce::Justification::topRight);
     }
 
-    // LOOP OPTIONS divider between the strip and the grid.
+    // LOOP OPTIONS divider between the strip and the grid - a thin neon
+    // turquoise line fading out toward the edges, the room's cold light
+    // against all the warm amber.
     const int dividerY = strip.getBottom() + 4;
     auto divider = juce::Rectangle<int> (0, dividerY, getWidth(), 20).reduced (16, 0);
     g.setFont (theme::heading (12.0f));
-    g.setColour (theme::textDim);
+    g.setColour (theme::turquoise.withAlpha (0.85f));
     g.drawText ("LOOP OPTIONS", divider, juce::Justification::centred);
     const int textW = 110;
-    g.setColour (theme::outline);
-    g.fillRect (divider.getX(), dividerY + 10, divider.getWidth() / 2 - textW / 2, 1);
-    g.fillRect (divider.getCentreX() + textW / 2, dividerY + 10,
-                divider.getWidth() / 2 - textW / 2, 1);
+    auto glowLine = [&g] (float x, float y, float w)
+    {
+        if (w <= 0.0f)
+            return;
+        g.setColour (theme::turquoise.withAlpha (0.10f));
+        g.fillRect (x, y - 2.0f, w, 5.0f);
+        g.setColour (theme::turquoise.withAlpha (0.22f));
+        g.fillRect (x, y - 1.0f, w, 3.0f);
+        g.setColour (theme::turquoise.withAlpha (0.55f));
+        g.fillRect (x, y, w, 1.0f);
+    };
+    glowLine ((float) divider.getX(), (float) dividerY + 10.0f,
+              (float) (divider.getWidth() / 2 - textW / 2));
+    glowLine ((float) (divider.getCentreX() + textW / 2), (float) dividerY + 10.0f,
+              (float) (divider.getWidth() / 2 - textW / 2));
 }
 
 void OrchaAudioProcessorEditor::resized()

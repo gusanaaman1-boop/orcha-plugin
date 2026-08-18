@@ -74,8 +74,16 @@ void OptionCard::paint (juce::Graphics& g)
     auto bounds = getLocalBounds().toFloat().reduced (1.0f);
     g.setColour (theme::panel);
     g.fillRoundedRectangle (bounds, 8.0f);
-    g.setColour (playing ? theme::amber : theme::outline);
-    g.drawRoundedRectangle (bounds, 8.0f, playing ? 1.5f : 1.0f);
+    if (playing)
+        // The playing card is the room's light source: its frame glows in
+        // its own waveform colour.
+        theme::neonRect (g, bounds.reduced (1.5f), 7.0f,
+                         theme::waveColour (index), 0.9f);
+    else
+    {
+        g.setColour (favorite ? theme::amber.withAlpha (0.55f) : theme::outline);
+        g.drawRoundedRectangle (bounds, 8.0f, favorite ? 1.3f : 1.0f);
+    }
 
     if (! present)
     {
@@ -122,10 +130,15 @@ void OptionCard::paint (juce::Graphics& g)
         g.drawImage (waveImage, wave);
         if (playing)
         {
-            g.setColour (theme::amber.withAlpha (0.9f));
-            g.fillRect (wave.getX() + wave.getWidth()
-                            * juce::jlimit (0.0f, 1.0f, playhead) - 1.0f,
-                        wave.getY(), 2.0f, wave.getHeight());
+            const float px = wave.getX() + wave.getWidth()
+                                 * juce::jlimit (0.0f, 1.0f, playhead);
+            // Neon playhead: bloom, then the bright core line.
+            g.setColour (theme::amberBright.withAlpha (0.18f));
+            g.fillRect (px - 4.0f, wave.getY(), 8.0f, wave.getHeight());
+            g.setColour (theme::amberBright.withAlpha (0.45f));
+            g.fillRect (px - 2.0f, wave.getY(), 4.0f, wave.getHeight());
+            g.setColour (juce::Colours::white.withAlpha (0.95f));
+            g.fillRect (px - 0.75f, wave.getY(), 1.5f, wave.getHeight());
         }
     }
     else
@@ -158,7 +171,8 @@ void OptionCard::paint (juce::Graphics& g)
         heart.closeSubPath();
         if (favorite)
         {
-            g.setColour (theme::amber);
+            theme::neonPath (g, heart, theme::amber, 0.6f);
+            g.setColour (theme::amberBright);
             g.fillPath (heart);
         }
         else

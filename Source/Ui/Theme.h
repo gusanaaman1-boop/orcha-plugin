@@ -29,6 +29,13 @@ inline juce::Colour waveColour (int index)
 juce::Font heading (float height);
 juce::Font label (float height);
 
+// Neon: layered soft strokes - no shaders, cheap enough for paint().
+// strength 1.0 is a clear glow; 0.5 a hint.
+void neonRect (juce::Graphics&, juce::Rectangle<float> r, float corner,
+               juce::Colour colour, float strength = 1.0f);
+void neonPath (juce::Graphics&, const juce::Path&, juce::Colour colour,
+               float strength = 1.0f);
+
 // Min/max waveform of a mono-folded buffer into the given rectangle.
 void paintWaveform (juce::Graphics& g, juce::Rectangle<float> area,
                     const juce::AudioBuffer<float>& buffer, juce::Colour colour);

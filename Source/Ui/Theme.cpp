@@ -13,6 +13,38 @@ juce::Font label (float height)
     return juce::Font (juce::FontOptions (height));
 }
 
+void neonRect (juce::Graphics& g, juce::Rectangle<float> r, float corner,
+               juce::Colour colour, float strength)
+{
+    // Widening strokes with falling alpha read as bloom on a dark ground.
+    const float widths[3] = { 7.0f, 4.0f, 2.0f };
+    const float alphas[3] = { 0.10f, 0.20f, 0.42f };
+    for (int i = 0; i < 3; ++i)
+    {
+        g.setColour (colour.withAlpha (juce::jmin (1.0f, alphas[i] * strength)));
+        g.drawRoundedRectangle (r.expanded (widths[i] * 0.35f), corner + widths[i] * 0.3f,
+                                widths[i]);
+    }
+    g.setColour (colour.withAlpha (juce::jmin (1.0f, 0.9f * strength)));
+    g.drawRoundedRectangle (r, corner, 1.4f);
+}
+
+void neonPath (juce::Graphics& g, const juce::Path& path, juce::Colour colour,
+               float strength)
+{
+    const float widths[3] = { 6.0f, 3.5f, 1.8f };
+    const float alphas[3] = { 0.10f, 0.20f, 0.45f };
+    for (int i = 0; i < 3; ++i)
+    {
+        g.setColour (colour.withAlpha (juce::jmin (1.0f, alphas[i] * strength)));
+        g.strokePath (path, juce::PathStrokeType (widths[i],
+                          juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    }
+    g.setColour (colour.withAlpha (juce::jmin (1.0f, 0.95f * strength)));
+    g.strokePath (path, juce::PathStrokeType (1.2f,
+                      juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+}
+
 void paintWaveform (juce::Graphics& g, juce::Rectangle<float> area,
                     const juce::AudioBuffer<float>& buffer, juce::Colour colour)
 {
@@ -21,11 +53,11 @@ void paintWaveform (juce::Graphics& g, juce::Rectangle<float> area,
     if (numSamples == 0 || columns <= 0)
         return;
 
-    g.setColour (colour);
     const float midY = area.getCentreY();
     const float halfH = area.getHeight() * 0.5f;
     const int chans = buffer.getNumChannels();
 
+    std::vector<float> peaks ((size_t) columns, 0.0f);
     for (int x = 0; x < columns; ++x)
     {
         const int start = (int) ((juce::int64) x * numSamples / columns);
@@ -37,7 +69,21 @@ void paintWaveform (juce::Graphics& g, juce::Rectangle<float> area,
             for (int i = start; i < juce::jmax (start + 1, end); ++i)
                 peak = juce::jmax (peak, std::abs (d[juce::jmin (i, numSamples - 1)]));
         }
-        const float h = juce::jmax (1.0f, peak * halfH);
+        peaks[(size_t) x] = peak;
+    }
+
+    // Halo pass first - a wide translucent copy behind the bars turns each
+    // waveform into a small neon sign - then the crisp core.
+    g.setColour (colour.withAlpha (0.20f));
+    for (int x = 0; x < columns; ++x)
+    {
+        const float h = juce::jmax (1.0f, peaks[(size_t) x] * halfH) + 2.0f;
+        g.fillRect (area.getX() + (float) x - 1.0f, midY - h, 3.0f, h * 2.0f);
+    }
+    g.setColour (colour);
+    for (int x = 0; x < columns; ++x)
+    {
+        const float h = juce::jmax (1.0f, peaks[(size_t) x] * halfH);
         g.fillRect (area.getX() + (float) x, midY - h, 1.0f, h * 2.0f);
     }
 }
@@ -85,8 +131,12 @@ void OrchaLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int w,
     juce::Path value;
     value.addCentredArc (centre.x, centre.y, radius - 3.0f, radius - 3.0f,
                          0.0f, startAngle, angle, true);
-    g.setColour (amber);
-    g.strokePath (value, juce::PathStrokeType (2.5f, juce::PathStrokeType::curved,
+    // The value arc is the knob's neon tube: bloom first, crisp core on top.
+    g.setColour (amber.withAlpha (0.30f));
+    g.strokePath (value, juce::PathStrokeType (5.5f, juce::PathStrokeType::curved,
+                                               juce::PathStrokeType::rounded));
+    g.setColour (amberBright);
+    g.strokePath (value, juce::PathStrokeType (2.2f, juce::PathStrokeType::curved,
                                                juce::PathStrokeType::rounded));
 
     // Pointer.
@@ -108,9 +158,20 @@ void OrchaLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& bu
         colour = colour.brighter (0.08f);
     g.setColour (colour);
     g.fillRoundedRectangle (bounds, 6.0f);
-    if (! button.getToggleState())
+
+    // Anything accent-lit glows: toggled chips, the amber GENERATE, the SET
+    // teal. Dark idle buttons keep the plain outline - restraint is what
+    // makes the lit ones read as neon.
+    const bool lit = button.getToggleState()
+                  || colour.getPerceivedBrightness() > 0.45f;
+    if (lit)
+        neonRect (g, bounds.reduced (1.0f), 5.0f,
+                  colour.getPerceivedBrightness() > 0.45f ? colour
+                                                          : amberBright,
+                  highlighted || down ? 1.0f : 0.75f);
+    else
     {
-        g.setColour (outline);
+        g.setColour (highlighted ? textDim : outline);
         g.drawRoundedRectangle (bounds, 6.0f, 1.0f);
     }
 }
