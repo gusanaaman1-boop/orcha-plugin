@@ -52,7 +52,13 @@ void paintSpectralWaveform (juce::Graphics& g, juce::Rectangle<float> area,
                             double sampleRate)
 {
     const int numSamples = buffer.getNumSamples();
-    const int columns = juce::jmax (1, (int) area.getWidth());
+    // Retina awareness: painting 1-px columns on a 2x display throws away
+    // half the resolution and reads as SMEAR (user report). Columns follow
+    // the PHYSICAL pixel grid; on a 1x surface scale stays 1.
+    const float scale = juce::jlimit (1.0f, 3.0f,
+        g.getInternalContext().getPhysicalPixelScaleFactor());
+    const int columns = juce::jmax (1, (int) (area.getWidth() * scale));
+    const float colW = area.getWidth() / (float) columns;
     if (numSamples == 0 || columns <= 0 || sampleRate <= 0.0)
         return;
 
@@ -161,12 +167,13 @@ void paintSpectralWaveform (juce::Graphics& g, juce::Rectangle<float> area,
         if (peaks[(size_t) x] < 0.02f)
             col = col.withAlpha (0.35f);   // near-silence stays quiet visually
 
-        const float hgt = juce::jmax (1.0f, peaks[(size_t) x] * halfH);
-        g.setColour (col.withAlpha (col.getFloatAlpha() * 0.22f));
-        g.fillRect (area.getX() + (float) x - 1.0f, midY - hgt - 1.5f,
-                    3.0f, (hgt + 1.5f) * 2.0f);
+        const float hgt = juce::jmax (colW, peaks[(size_t) x] * halfH);
+        const float px = area.getX() + (float) x * colW;
+        // A whisper of halo, one physical pixel each side - glow without mush.
+        g.setColour (col.withAlpha (col.getFloatAlpha() * 0.18f));
+        g.fillRect (px - colW, midY - hgt - colW, colW * 3.0f, (hgt + colW) * 2.0f);
         g.setColour (col);
-        g.fillRect (area.getX() + (float) x, midY - hgt, 1.0f, hgt * 2.0f);
+        g.fillRect (px, midY - hgt, colW, hgt * 2.0f);
     }
 }
 
@@ -174,7 +181,10 @@ void paintWaveform (juce::Graphics& g, juce::Rectangle<float> area,
                     const juce::AudioBuffer<float>& buffer, juce::Colour colour)
 {
     const int numSamples = buffer.getNumSamples();
-    const int columns = juce::jmax (1, (int) area.getWidth());
+    const float scale = juce::jlimit (1.0f, 3.0f,
+        g.getInternalContext().getPhysicalPixelScaleFactor());
+    const int columns = juce::jmax (1, (int) (area.getWidth() * scale));
+    const float colW = area.getWidth() / (float) columns;
     if (numSamples == 0 || columns <= 0)
         return;
 
@@ -201,17 +211,17 @@ void paintWaveform (juce::Graphics& g, juce::Rectangle<float> area,
     // waveform into a small neon sign - then the crisp core.
     // Two halo passes - a wide soft one and a tighter hotter one - then the
     // crisp core. The wave becomes a lit tube, not a bar chart.
-    g.setColour (colour.withAlpha (0.22f));
+    g.setColour (colour.withAlpha (0.18f));
     for (int x = 0; x < columns; ++x)
     {
-        const float h = juce::jmax (1.0f, peaks[(size_t) x] * halfH) + 2.5f;
-        g.fillRect (area.getX() + (float) x - 1.5f, midY - h, 4.0f, h * 2.0f);
+        const float h = juce::jmax (colW, peaks[(size_t) x] * halfH) + colW * 2.0f;
+        g.fillRect (area.getX() + (float) x * colW - colW, midY - h, colW * 3.0f, h * 2.0f);
     }
     g.setColour (colour);
     for (int x = 0; x < columns; ++x)
     {
-        const float h = juce::jmax (1.0f, peaks[(size_t) x] * halfH);
-        g.fillRect (area.getX() + (float) x, midY - h, 1.0f, h * 2.0f);
+        const float h = juce::jmax (colW, peaks[(size_t) x] * halfH);
+        g.fillRect (area.getX() + (float) x * colW, midY - h, colW, h * 2.0f);
     }
 }
 

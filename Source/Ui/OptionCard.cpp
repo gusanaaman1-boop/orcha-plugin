@@ -140,6 +140,7 @@ void OptionCard::paint (juce::Graphics& g)
                 { 0.0f, 0.0f, (float) w * 2, (float) h * 2 },
                 loop->buffer, loop->sampleRate);
         }
+        g.setImageResamplingQuality (juce::Graphics::highResamplingQuality);
         g.drawImage (waveImage, wave);
         if (playing)
         {
