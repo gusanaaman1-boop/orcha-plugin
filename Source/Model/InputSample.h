@@ -34,6 +34,22 @@ inline Role roleFromName (const juce::String& s)
 }
 
 // What SampleAnalyzer learned about a file. All values are host-independent.
+// What KIND of sound a sample is - the engine treats a lead differently
+// from a kick: tonal voices get melodic sequencing, pads get space and
+// swells, percussive voices get the drum grammar.
+enum class SampleKind { Percussive = 0, Tonal, Pad };
+
+inline const char* sampleKindName (SampleKind k)
+{
+    switch (k)
+    {
+        case SampleKind::Percussive: return "DRUM";
+        case SampleKind::Tonal:      return "TONAL";
+        case SampleKind::Pad:        return "PAD";
+    }
+    return "DRUM";
+}
+
 struct SampleAnalysis
 {
     double durationSeconds = 0.0;
@@ -46,6 +62,10 @@ struct SampleAnalysis
     // and playback that starts at sample 0 renders silence, gets choked, and
     // the whole voice vanishes from the mix.
     int    onsetSample = 0;
+    // Periodicity of the body (normalized autocorrelation peak): harmonic
+    // material scores high, drums and noise score low.
+    float  periodicity = 0.0f;
+    SampleKind kind = SampleKind::Percussive;
 };
 
 // An immutable loaded sample. Instances are shared by pointer between the

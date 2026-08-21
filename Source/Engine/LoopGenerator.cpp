@@ -1119,6 +1119,53 @@ Pattern LoopGenerator::generateV2 (juce::uint64 motifSeed, juce::uint64 ornament
 
     std::sort (p.events.begin(), p.events.end(), eventBefore);
 
+    // --- 9c. Sample Intelligence: tonal voices become MELODIC ------------------
+    // A lead loaded into a slot should not be treated as a snare. Every
+    // tonal (non-pad) role gets a deterministic melody: its hits walk the
+    // natural-minor ladder with repetition and homecoming - downbeats return
+    // to the root - so ONE note sample becomes a riff. The melody belongs to
+    // the MOTIF seed (its own stream, no interference with existing draws):
+    // reroll keeps the tune and changes only the performance.
+    for (int ri : { (int) Role::MID, (int) Role::HIGH, (int) Role::FX })
+    {
+        const auto& tr = traits[(size_t) ri];
+        if (! tr.tonal || tr.padLike)
+            continue;
+        // The tune is a fixed LINE over the step grid, drawn once from the
+        // motif stream - events SAMPLE it by position. Deriving pitches from
+        // event order instead would let the ornament seed reshuffle the
+        // melody on every reroll (caught by test).
+        Rng mel (motifSeed ^ (0x7071A1ull * (juce::uint64) (ri + 1)));
+        static constexpr int melLadder[] = { 0, 2, 3, 5, 7, 8, 10, 12 };
+        std::array<int, 64> line {};
+        int idx = 0;
+        for (int st = 0; st < juce::jmin (64, steps); ++st)
+        {
+            if (st % 16 == 0)
+                idx = 0;                               // bar line: home
+            else
+            {
+                const float u = mel.uni();
+                if (u < 0.35f)      { /* hold the note */ }
+                else if (u < 0.78f) idx += mel.chance (0.55f) ? 1 : -1;
+                else                idx += mel.chance (0.5f) ? 2 : -2;
+                idx = juce::jlimit (0, 7, idx);
+            }
+            line[(size_t) st] = idx;
+        }
+        for (auto& e : p.events)
+        {
+            if ((int) e.role != ri)
+                continue;
+            const int st = juce::jlimit (0, juce::jmin (63, steps - 1),
+                                         (int) std::floor (e.pos));
+            e.pitchSemis = melLadder[line[(size_t) st]];
+            if (e.gateSteps <= 0.0 || e.gateSteps > 2.0)
+                e.gateSteps = 1.5;                     // notes, not ticks
+            e.roll = false;                            // runs become lines
+        }
+    }
+
     // --- 10. sample-aware spacing pass -----------------------------------------
     // The symbolic result must already respect what the audio can carry:
     //  - a sustained sample gets gated everywhere and never re-fires inside
@@ -1132,14 +1179,18 @@ Pattern LoopGenerator::generateV2 (juce::uint64 motifSeed, juce::uint64 ornament
         for (auto e : p.events)
         {
             const auto& t = traits[(size_t) e.role];
-            const double minGap = t.sustained || t.lowHeavy ? 1.0 : 0.0;
+            // Pads breathe: two steps between notes, long gates.
+            const double minGap = t.padLike ? 2.0
+                                : t.sustained || t.lowHeavy ? 1.0 : 0.0;
             const bool tooClose = minGap > 0.0 && ! e.protectedAnchor && ! e.roll
                 && e.pos - lastPos[(size_t) e.role] < minGap - 1.0e-9;
             if (tooClose)
                 continue;
             if (t.weakTransient && e.roll)
                 continue;
-            if (t.sustained && e.gateSteps <= 0.0)
+            if (t.padLike && e.gateSteps < 3.0)
+                e.gateSteps = 3.0;
+            else if (t.sustained && e.gateSteps <= 0.0)
                 e.gateSteps = 2.0;
             lastPos[(size_t) e.role] = e.pos;
             kept.push_back (e);

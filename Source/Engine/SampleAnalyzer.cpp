@@ -85,6 +85,34 @@ SampleAnalysis SampleAnalyzer::analyze (const juce::AudioBuffer<float>& buffer, 
 
     a.onsetSample = onset;
 
+    // Periodicity: normalized autocorrelation over the body, lags spanning
+    // ~80 Hz..1 kHz. A held note correlates with itself one period later;
+    // drums and noise do not. This is what tells a LEAD from a SNARE.
+    {
+        const int bodyStart = juce::jmin (numSamples - 1,
+                                          onset + (int) (sampleRate * 0.01));
+        const int bodyLen = juce::jmin (numSamples - bodyStart, (int) (sampleRate * 0.08));
+        const int minLag = (int) (sampleRate / 1000.0);
+        const int maxLag = juce::jmin (bodyLen / 2, (int) (sampleRate / 80.0));
+        float best = 0.0f;
+        if (bodyLen > 256 && maxLag > minLag)
+        {
+            double e0 = 1.0e-12;
+            for (int i = 0; i < bodyLen; ++i)
+                e0 += (double) mono[(size_t) (bodyStart + i)]
+                    * mono[(size_t) (bodyStart + i)];
+            for (int lag = minLag; lag < maxLag; lag += juce::jmax (1, minLag / 4))
+            {
+                double c = 0.0;
+                for (int i = 0; i + lag < bodyLen; ++i)
+                    c += (double) mono[(size_t) (bodyStart + i)]
+                       * mono[(size_t) (bodyStart + i + lag)];
+                best = juce::jmax (best, (float) (c / e0));
+            }
+        }
+        a.periodicity = juce::jlimit (0.0f, 1.0f, best);
+    }
+
     // One-shot: short, and the last quarter is much quieter than the attack.
     double tailSq = 0.0;
     const int tailStart = numSamples * 3 / 4;
@@ -92,6 +120,14 @@ SampleAnalysis SampleAnalyzer::analyze (const juce::AudioBuffer<float>& buffer, 
         tailSq += (double) mono[(size_t) i] * mono[(size_t) i];
     const float tailRms = (float) std::sqrt (tailSq / juce::jmax (1, numSamples - tailStart));
     a.isOneShot = a.durationSeconds < 1.5 && tailRms < attackPeak * 0.3f;
+
+    // The verdict. Thresholds chosen against synthetic references (pure
+    // tones, noise bursts, slow swells) in the test suite.
+    if (a.periodicity > 0.55f)
+        a.kind = (a.transientStrength < 0.35f && a.durationSeconds > 0.5)
+                     ? SampleKind::Pad : SampleKind::Tonal;
+    else
+        a.kind = SampleKind::Percussive;
 
     return a;
 }

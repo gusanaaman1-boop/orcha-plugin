@@ -92,6 +92,8 @@ struct RoleTraits
     bool lowHeavy = false;       // sub-heavy: no dense stacking
     bool brightShort = false;    // supports fast ornamentation
     bool weakTransient = false;  // better as swells than as rolls
+    bool tonal = false;          // harmonic (a lead, a pluck): gets MELODY
+    bool padLike = false;        // tonal + soft + long: space and swells
 };
 using TraitsByRole = std::array<RoleTraits, 5>;   // indexed by (int) Role
 

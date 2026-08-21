@@ -2235,6 +2235,83 @@ int main (int argc, char* argv[])
                "gesture choice is deterministic");
     }
 
+    // === Sample Intelligence: recognize what came in, adapt the rhythm =========
+    {
+        // Classifier references: noise burst = DRUM, held tone = TONAL,
+        // slow swell = PAD.
+        auto burst = [&] (double seconds)
+        {
+            juce::AudioBuffer<float> b (1, (int) (sr * seconds));
+            juce::Random nr (42);
+            for (int i = 0; i < b.getNumSamples(); ++i)
+                b.setSample (0, i, (nr.nextFloat() * 2.0f - 1.0f)
+                    * std::exp (-6.0f * (float) i / (float) b.getNumSamples()));
+            return SampleAnalyzer::analyze (b, sr);
+        };
+        auto tone = [&] (double hz, double seconds, double attack)
+        {
+            juce::AudioBuffer<float> b (1, (int) (sr * seconds));
+            for (int i = 0; i < b.getNumSamples(); ++i)
+            {
+                const float env = attack > 0.0
+                    ? juce::jmin (1.0f, (float) (i / (sr * attack))) : 1.0f;
+                b.setSample (0, i, 0.7f * env
+                    * std::sin ((float) i * juce::MathConstants<float>::twoPi
+                                * (float) hz / (float) sr));
+            }
+            return SampleAnalyzer::analyze (b, sr);
+        };
+        check (burst (0.3).kind == SampleKind::Percussive, "noise burst reads DRUM");
+        check (tone (440.0, 0.4, 0.0).kind == SampleKind::Tonal, "held tone reads TONAL");
+        check (tone (330.0, 1.2, 0.6).kind == SampleKind::Pad, "slow swell reads PAD");
+
+        // A tonal MID voice gets a MELODY: ladder pitches, several distinct
+        // notes, root on the bar line, no drum rolls left on it.
+        TraitsByRole tr {};
+        tr[(size_t) Role::MID].tonal = true;
+        GeneratorSettings s;
+        s.mode = Mode::GROOVE;
+        s.bars = 2;
+        static const std::set<int> mLadder = { 0, 2, 3, 5, 7, 8, 10, 12 };
+        int melodic = 0;
+        for (int i = 0; i < 20; ++i)
+        {
+            const auto p = PatternValidator::validate (LoopGenerator::generateV2 (
+                LoopGenerator::deriveSeed (0x3E10, i),
+                LoopGenerator::deriveSeed (0x013E, i), s, tr));
+            std::set<int> pitches;
+            for (const auto& e : p.events)
+                if (e.role == Role::MID)
+                {
+                    check (mLadder.count (e.pitchSemis) > 0,
+                           "melodic pitches stay on the ladder");
+                    check (! e.roll, "melodic voices carry notes, not rolls");
+                    if (std::fmod (e.pos, 16.0) < 0.01)
+                        check (e.pitchSemis == 0, "bar lines return to the root");
+                    pitches.insert (e.pitchSemis);
+                }
+            if (pitches.size() >= 3)
+                ++melodic;
+        }
+        check (melodic >= 14, "tonal voices actually get melodies");
+
+        // The tune belongs to the motif: a reroll (new ornament seed) keeps
+        // the melody, note for note.
+        auto takePitches = [&] (juce::uint64 orn)
+        {
+            std::vector<std::pair<double,int>> out;
+            const auto p = PatternValidator::validate (LoopGenerator::generateV2 (
+                LoopGenerator::deriveSeed (0x3E10, 5), orn, s, tr));
+            for (const auto& e : p.events)
+                if (e.role == Role::MID && e.protectedAnchor)
+                    out.push_back ({ e.pos, e.pitchSemis });
+            return out;
+        };
+        check (takePitches (111) == takePitches (222)
+               || takePitches (111).empty(),
+               "anchor melody survives a reroll");
+    }
+
     // === renderer: a stem's leading silence must not mute its voice =============
     // User report: "the engine only uses the first sample." Cause: stems often
     // open with silence (a snare stem's first hit at 40% of the file), and

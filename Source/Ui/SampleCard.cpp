@@ -156,6 +156,9 @@ void SampleCard::paint (juce::Graphics& g)
     juce::String detail;
     if (sample->userRole == Role::AUTO)
         detail << "AUTO -> " << roleName (sample->resolvedRole);
+        // What the intelligence heard: a lead says TONAL, a swell says PAD.
+        if (sample->analysis.kind != SampleKind::Percussive)
+            detail << "  " << sampleKindName (sample->analysis.kind);
     if (transform.isCropped())
         detail << "   CUT "
                << juce::roundToInt ((transform.end - transform.start) * 100.0f) << "%";

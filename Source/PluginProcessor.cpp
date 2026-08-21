@@ -31,6 +31,8 @@ static TraitsByRole deriveTraits (const std::vector<InputSample::Ptr>& samples,
         t.lowHeavy = a.lowEnergyRatio > 0.4f;
         t.brightShort = a.spectralCentroidHz > 2500.0f && a.durationSeconds < 0.4;
         t.weakTransient = a.transientStrength < 0.3f;
+        t.tonal = a.kind != SampleKind::Percussive;
+        t.padLike = a.kind == SampleKind::Pad;
     }
     return traits;
 }
