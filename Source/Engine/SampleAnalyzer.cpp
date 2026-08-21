@@ -83,6 +83,8 @@ SampleAnalysis SampleAnalyzer::analyze (const juce::AudioBuffer<float>& buffer, 
     a.spectralCentroidHz = den > 0.0 ? (float) (num / den) : 0.0f;
     a.lowEnergyRatio    = den > 0.0 ? (float) (lowE / den) : 0.0f;
 
+    a.onsetSample = onset;
+
     // One-shot: short, and the last quarter is much quieter than the attack.
     double tailSq = 0.0;
     const int tailStart = numSamples * 3 / 4;

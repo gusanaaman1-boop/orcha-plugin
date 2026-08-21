@@ -41,6 +41,11 @@ struct SampleAnalysis
     float  spectralCentroidHz = 0.0f;
     float  lowEnergyRatio = 0.0f;     // energy below 200 Hz / total energy
     bool   isOneShot = true;          // short decaying hit vs. loop-like file
+    // First sample that carries sound (2 ms pre-roll kept). Stems often open
+    // with SILENCE - a snare stem whose first hit sits at 40% of the file -
+    // and playback that starts at sample 0 renders silence, gets choked, and
+    // the whole voice vanishes from the mix.
+    int    onsetSample = 0;
 };
 
 // An immutable loaded sample. Instances are shared by pointer between the

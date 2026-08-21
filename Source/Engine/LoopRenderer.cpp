@@ -170,7 +170,14 @@ juce::AudioBuffer<float> LoopRenderer::render (const Pattern& pattern, const Con
         const double rate = std::pow (2.0, pitch / 12.0)
                           * (sample->sourceSampleRate / ctx.sampleRate);
 
-        const int srcLen = sample->buffer.getNumSamples();
+        // Playback anchors on the DETECTED ONSET, not on sample zero. A stem
+        // whose first hit sits 40% into the file otherwise renders leading
+        // silence, the auto-gate chokes before the sound arrives, and the
+        // voice simply vanishes from the mix - the exact user report: "the
+        // engine only uses the first sample."
+        const int srcOnset = juce::jlimit (0, sample->buffer.getNumSamples() - 1,
+                                           sample->analysis.onsetSample);
+        const int srcLen = sample->buffer.getNumSamples() - srcOnset;
         int renderLen = (int) ((double) srcLen / rate);
         if (gate > 0.0)
             renderLen = juce::jmin (renderLen, (int) (gate * stepSec * ctx.sampleRate));
@@ -201,7 +208,7 @@ juce::AudioBuffer<float> LoopRenderer::render (const Pattern& pattern, const Con
         for (int ch = 0; ch < 2; ++ch)
         {
             const int srcCh = juce::jmin (ch, sample->buffer.getNumChannels() - 1);
-            const float* src = sample->buffer.getReadPointer (srcCh);
+            const float* src = sample->buffer.getReadPointer (srcCh) + srcOnset;
             float* dst = out.getWritePointer (ch) + startSample;
             float prev = 0.0f;
 

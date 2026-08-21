@@ -2235,6 +2235,45 @@ int main (int argc, char* argv[])
                "gesture choice is deterministic");
     }
 
+    // === renderer: a stem's leading silence must not mute its voice =============
+    // User report: "the engine only uses the first sample." Cause: stems often
+    // open with silence (a snare stem's first hit at 40% of the file), and
+    // playback started at sample ZERO - the auto-gate choked before any sound
+    // arrived. Playback now anchors on the analyzer's onset.
+    {
+        LoopRenderer::Context ctx;
+        ctx.sampleRate = sr;
+        ctx.bpm = 125.0;
+        // MID sample: half a second of SILENCE, then a clear burst.
+        auto silentThenBurst = std::make_shared<InputSample>();
+        silentThenBurst->buffer.setSize (1, (int) sr);
+        silentThenBurst->buffer.clear();
+        for (int i = 0; i < (int) (sr * 0.2); ++i)
+            silentThenBurst->buffer.setSample (0, (int) (sr * 0.5) + i,
+                0.8f * std::sin (i * juce::MathConstants<float>::twoPi * 800.0f / (float) sr));
+        silentThenBurst->sourceSampleRate = sr;
+        silentThenBurst->analysis = SampleAnalyzer::analyze (silentThenBurst->buffer, sr);
+        check (silentThenBurst->analysis.onsetSample > (int) (sr * 0.4),
+               "analyzer finds the late onset");
+
+        ctx.samples = { makeHit (60.0, sr, 0.4), silentThenBurst,
+                        makeHit (4000.0, sr, 0.15) };
+        ctx.roleMap = SampleAnalyzer::assignRoles (ctx.samples);
+
+        Pattern p;
+        p.settings.bars = 1;
+        Event e;
+        e.pos = 4.0;
+        e.role = Role::MID;
+        e.velocity = 0.9f;
+        p.events.push_back (e);
+        const auto buf = LoopRenderer::render (p, ctx);
+        const int at = (int) (4.0 * (60.0 / 125.0 / 4.0) * sr);
+        const float heard = buf.getMagnitude (at, (int) (sr * 0.05));
+        check (heard > 0.05f,
+               "a voice with leading silence is HEARD at its event");
+    }
+
     // === B4: chained phrase - FX tails must cross the card boundary ==============
     {
         LoopRenderer::Context ctx;
