@@ -104,8 +104,8 @@ void SampleEditPanel::paint (juce::Graphics& g)
     const auto wave = waveRect();
     g.setColour (theme::panel);
     g.fillRect (wave);
-    theme::paintWaveform (g, wave.reduced (0.0f, 4.0f), raw->buffer,
-                          theme::turquoise.withAlpha (0.9f));
+    theme::paintSpectralWaveform (g, wave.reduced (0.0f, 4.0f), raw->buffer,
+                                  raw->sourceSampleRate);
 
     // Discarded regions dim; the kept region stays bright.
     const float xs = xForFrac (working.start);

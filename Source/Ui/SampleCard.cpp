@@ -143,7 +143,11 @@ void SampleCard::paint (juce::Graphics& g)
 
     auto info = area.removeFromBottom (34);
     const auto wave = waveArea();
-    theme::paintWaveform (g, wave, sample->buffer, theme::turquoise);
+    // Frequency tells the colour: sub is deep brown, 100 Hz territory is
+    // lighter brown, mids run orange to yellow, highs go blue-white. One
+    // glance says what the sample IS before it says how loud it is.
+    theme::paintSpectralWaveform (g, wave, sample->buffer,
+                                  sample->sourceSampleRate);
 
     g.setColour (theme::textDim);
     g.setFont (theme::label (11.5f));

@@ -30,6 +30,7 @@ public:
 private:
     void wireToggleGroup (std::vector<juce::TextButton*> group, int radioId);
     void changed() { if (onSettingsChanged) onSettingsChanged(); }
+    void refreshBarLabels();
 
     juce::TextButton dropButton { "DROP" }, breakButton { "BREAK" },
                      buildButton { "BUILD" }, grooveButton { "GROOVE" },

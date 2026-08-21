@@ -47,6 +47,74 @@ void neonPath (juce::Graphics& g, const juce::Path& path, juce::Colour colour,
                       juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 }
 
+void paintSpectralWaveform (juce::Graphics& g, juce::Rectangle<float> area,
+                            const juce::AudioBuffer<float>& buffer,
+                            double sampleRate)
+{
+    const int numSamples = buffer.getNumSamples();
+    const int columns = juce::jmax (1, (int) area.getWidth());
+    if (numSamples == 0 || columns <= 0 || sampleRate <= 0.0)
+        return;
+
+    const float midY = area.getCentreY();
+    const float halfH = area.getHeight() * 0.5f;
+    const int chans = buffer.getNumChannels();
+
+    // Log-frequency colour stops, matched to how the ear groups the bands.
+    struct Stop { double hz; juce::Colour c; };
+    static const Stop stops[] = {
+        {    40.0, juce::Colour (0xff3a2314) },   // sub: deep brown
+        {   100.0, juce::Colour (0xff8a5a2a) },   // low: lighter brown
+        {   400.0, juce::Colour (0xffe0902f) },   // low-mid: orange
+        {  1500.0, juce::Colour (0xfff2c94c) },   // mid: yellow
+        {  4000.0, juce::Colour (0xffefe9c0) },   // high: pale sand
+        { 10000.0, juce::Colour (0xffcfe6ff) } }; // air: blue-white
+    auto colourForHz = [] (double hz)
+    {
+        hz = juce::jlimit (40.0, 10000.0, hz);
+        for (int i = 1; i < 6; ++i)
+            if (hz <= stops[i].hz)
+            {
+                const double t01 = (std::log (hz) - std::log (stops[i - 1].hz))
+                                 / (std::log (stops[i].hz) - std::log (stops[i - 1].hz));
+                return stops[i - 1].c.interpolatedWith (stops[i].c, (float) t01);
+            }
+        return stops[5].c;
+    };
+
+    for (int x = 0; x < columns; ++x)
+    {
+        const int start = (int) ((juce::int64) x * numSamples / columns);
+        const int end = juce::jmax (start + 2,
+            (int) ((juce::int64) (x + 1) * numSamples / columns));
+        float peak = 0.0f;
+        int crossings = 0;
+        float prev = 0.0f;
+        for (int i = start; i < juce::jmin (end, numSamples); ++i)
+        {
+            float v = 0.0f;
+            for (int ch = 0; ch < chans; ++ch)
+                v += buffer.getReadPointer (ch)[i];
+            peak = juce::jmax (peak, std::abs (v) / (float) chans);
+            if (i > start && (v > 0.0f) != (prev > 0.0f))
+                ++crossings;
+            prev = v;
+        }
+        const int len = juce::jmax (2, juce::jmin (end, numSamples) - start);
+        const double hz = 0.5 * (double) crossings * sampleRate / (double) len;
+        auto col = colourForHz (hz);
+        if (peak < 0.02f)
+            col = col.withAlpha (0.35f);   // near-silence stays quiet visually
+
+        const float hgt = juce::jmax (1.0f, peak * halfH);
+        g.setColour (col.withAlpha (col.getFloatAlpha() * 0.25f));
+        g.fillRect (area.getX() + (float) x - 1.5f, midY - hgt - 2.0f,
+                    4.0f, (hgt + 2.0f) * 2.0f);
+        g.setColour (col);
+        g.fillRect (area.getX() + (float) x, midY - hgt, 1.0f, hgt * 2.0f);
+    }
+}
+
 void paintWaveform (juce::Graphics& g, juce::Rectangle<float> area,
                     const juce::AudioBuffer<float>& buffer, juce::Colour colour)
 {

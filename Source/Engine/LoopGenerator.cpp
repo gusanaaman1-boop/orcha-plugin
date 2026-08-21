@@ -897,7 +897,7 @@ Pattern LoopGenerator::generateV2 (juce::uint64 motifSeed, juce::uint64 ornament
                 e.velocity = juce::jlimit (0.1f, 1.0f, 0.35f + 0.6f * t * (0.5f + 0.5f * energy));
                 e.gateSteps = spacing;
                 if (settings.mode == Mode::BUILD)
-                    e.pitchSemis = (int) (t * (3.0f + 5.0f * energy));
+                    e.pitchSemis = snapToScale (t * (3.0f + 5.0f * energy));
                 p.events.push_back (e);
                 pos += spacing;
                 if (accelerate)
@@ -986,7 +986,7 @@ Pattern LoopGenerator::generateV2 (juce::uint64 motifSeed, juce::uint64 ornament
             for (int k = 0; k < n; ++k)
             {
                 const float t = n > 1 ? (float) k / (float) (n - 1) : 1.0f;
-                const int walk = juce::roundToInt (t * (5.0f + 4.0f * energy));
+                const int walk = snapToScale (t * (5.0f + 4.0f * energy));
                 countdown[(size_t) k]->pitchSemis += descending ? -walk : walk;
                 countdown[(size_t) k]->velocity =
                     juce::jlimit (0.05f, 1.0f, 0.8f + 0.2f * t);
@@ -1087,7 +1087,7 @@ Pattern LoopGenerator::generateV2 (juce::uint64 motifSeed, juce::uint64 ornament
                 e.role = riserRole;
                 e.roll = true;
                 e.velocity = juce::jlimit (0.1f, 1.0f, 0.3f + 0.65f * t);
-                e.pitchSemis = juce::roundToInt (
+                e.pitchSemis = snapToScale (
                     (float) lowStart + t * (float) (highEnd - lowStart));
                 e.gateSteps = 0.5;
                 p.events.push_back (e);

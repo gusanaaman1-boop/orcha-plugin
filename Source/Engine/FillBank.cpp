@@ -45,7 +45,8 @@ namespace
             const float t = n > 1 ? (float) i / (float) (n - 1) : 1.0f;
             out.push_back ({ from + i * spacing, role,
                              v0 + (v1 - v0) * t, spacing,
-                             juce::roundToInt (pitchTo * t), false, true });
+                             pitchTo == 0 ? 0 : snapToScale (pitchTo * t),
+                             false, true });
         }
         return out;
     }
@@ -206,7 +207,13 @@ Pattern FillBank::build (juce::uint64 motifSeed, juce::uint64 ornamentSeed,
     p.algo = 2;
     p.settings = settings;
     p.settings.mode = Mode::FILL;
-    p.settings.bars = 1;                    // a fill is one bar, by definition
+    // The bars setting means LENGTH here, like the fill tools do it:
+    //   1 -> a HALF-bar fill (the gesture double-time in the back half,
+    //        front half silent - drop it on the last bar of a phrase)
+    //   2 -> the classic ONE-bar fill
+    //   4 -> a TWO-bar fill: bar one states the approach, bar two throws
+    const int lengthSel = settings.bars;
+    p.settings.bars = lengthSel >= 4 ? 2 : 1;
     p.swing = 0.0;
 
     Rng rngM (motifSeed);
@@ -222,6 +229,37 @@ Pattern FillBank::build (juce::uint64 motifSeed, juce::uint64 ornamentSeed,
     const float density = settings.density;
     const float r = settings.randomness;
 
+    const double steps = p.stepCount();
+
+    // Where the authored gesture lands, per length. Every template is
+    // written over one bar (0..16); the length maps it onto the timeline.
+    auto place = [&] (double pos) -> double
+    {
+        if (lengthSel <= 1)                 // half: double-time, back half
+            return steps - 8.0 + pos * 0.5;
+        if (lengthSel >= 4)                 // two bars: gesture owns bar two
+            return 16.0 + pos;
+        return pos;                         // one bar: verbatim
+    };
+    const double gateScale = lengthSel <= 1 ? 0.5 : 1.0;
+
+    // Two-bar fills open with an APPROACH: the template's accents alone,
+    // softened, across bar one - a drummer marking the phrase before the
+    // fill proper.
+    if (lengthSel >= 4)
+        for (const auto& h : tpl.hits)
+            if (h.vel >= 0.85f && ! h.reverse)
+            {
+                Event a;
+                a.pos = h.pos;
+                a.role = h.role;
+                a.velocity = juce::jlimit (0.05f, 1.0f,
+                    h.vel * 0.55f * (0.72f + 0.42f * energy));
+                a.gateSteps = h.gate;
+                a.roll = h.roll;
+                p.events.push_back (a);
+            }
+
     for (const auto& h : tpl.hits)
     {
         // Low macro density thins the inner body of the fill but never its
@@ -232,7 +270,7 @@ Pattern FillBank::build (juce::uint64 motifSeed, juce::uint64 ornamentSeed,
             continue;
 
         Event e;
-        e.pos = h.pos;
+        e.pos = place (h.pos);
         e.role = h.role;
         // A weak-transient sample cannot articulate fast material: the hit
         // moves to the neighbouring voice rather than smearing.
@@ -240,7 +278,7 @@ Pattern FillBank::build (juce::uint64 motifSeed, juce::uint64 ornamentSeed,
             e.role = e.role == Role::MID ? Role::HIGH : Role::MID;
         e.velocity = juce::jlimit (0.05f, 1.0f,
             h.vel * (0.72f + 0.42f * energy) * (0.92f + 0.16f * rng.uni()));
-        e.gateSteps = h.gate;
+        e.gateSteps = h.gate * gateScale;
         e.pitchSemis = h.pitch;
         e.reverse = h.reverse;
         e.roll = h.roll;
@@ -250,9 +288,11 @@ Pattern FillBank::build (juce::uint64 motifSeed, juce::uint64 ornamentSeed,
 
     // High density adds connective ghosts in the empty half-steps of the
     // fill's front half - the back half belongs to the template's gesture.
-    if (density > 0.6f)
+    if (density > 0.6f && lengthSel > 1)
     {
-        for (double pos = 1.5; pos < 8.0; pos += 1.0)
+        const double from = lengthSel >= 4 ? 17.5 : 1.5;
+        const double to = lengthSel >= 4 ? 24.0 : 8.0;
+        for (double pos = from; pos < to; pos += 1.0)
         {
             bool taken = false;
             for (const auto& e : p.events)
@@ -272,12 +312,14 @@ Pattern FillBank::build (juce::uint64 motifSeed, juce::uint64 ornamentSeed,
 
     // Randomness: the same vocabulary as the loop engine - position slips
     // and voice swaps on non-structural hits.
+    const double slipLo = lengthSel <= 1 ? steps - 7.5 : 1.0;
+    const double slipHi = steps - 2.0;
     for (auto& e : p.events)
     {
-        if (e.pos < 1.0 || e.pos >= 14.0)
+        if (e.pos < slipLo || e.pos >= slipHi)
             continue;
         if (rng.chance (r * 0.3f))
-            e.pos = juce::jlimit (0.5, 13.5, e.pos + (rng.chance (0.5f) ? 0.5 : -0.5));
+            e.pos = juce::jlimit (slipLo, slipHi, e.pos + (rng.chance (0.5f) ? 0.5 : -0.5));
         if (rng.chance (r * 0.2f) && e.role != Role::LOW)
             e.role = e.role == Role::HIGH ? Role::MID : Role::HIGH;
     }

@@ -6,6 +6,20 @@ namespace orcha
 GenerationStrip::GenerationStrip()
 {
     wireToggleGroup ({ &dropButton, &breakButton, &buildButton, &grooveButton, &fillButton }, 101);
+
+    // In FILL the bars buttons mean fill LENGTH, half / one / two bars, the
+    // way the dedicated fill tools frame it. Entering FILL from the default
+    // "1 BAR" selection would silently mean a HALF-bar fill, so the middle
+    // option is selected on entry; leaving FILL restores loop labels.
+    fillButton.onClick = [this]
+    {
+        if (fillButton.getToggleState() && bars1.getToggleState())
+            bars2.setToggleState (true, juce::dontSendNotification);
+        refreshBarLabels();
+        changed();
+    };
+    for (auto* b : { &dropButton, &breakButton, &buildButton, &grooveButton })
+        b->onClick = [this] { refreshBarLabels(); changed(); };
     wireToggleGroup ({ &edmChip, &melodicChip, &psyChip, &urbanChip, &breaksChip,
                        &arabicChip, &medChip, &afroChip, &cinematicChip, &hybridChip }, 102);
     wireToggleGroup ({ &bars1, &bars2, &bars4 }, 103);
@@ -86,6 +100,16 @@ void GenerationStrip::setSettings (const GeneratorSettings& s)
     randomnessKnob.setValue (s.randomness, juce::dontSendNotification);
     (s.bars >= 4 ? bars4 : s.bars >= 2 ? bars2 : bars1)
         .setToggleState (true, juce::dontSendNotification);
+    refreshBarLabels();
+}
+
+void GenerationStrip::refreshBarLabels()
+{
+    const bool fill = fillButton.getToggleState();
+    bars1.setButtonText (fill ? juce::String (juce::CharPointer_UTF8 ("\xc2\xbd BAR"))
+                              : juce::String ("1 BAR"));
+    bars2.setButtonText (fill ? "1 BAR" : "2 BARS");
+    bars4.setButtonText (fill ? "2 BARS" : "4 BARS");
 }
 
 GeneratorSettings GenerationStrip::getSettings() const

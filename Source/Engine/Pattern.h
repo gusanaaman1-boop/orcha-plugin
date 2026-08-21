@@ -120,6 +120,22 @@ struct RoleMap
 // so the 12 cover returns, throws and stops.
 enum class Destination { LoopBack = 0, ToDrop, ToBreak, ToStop };
 
+// Pitch moves stay MUSICAL: gestures walk a natural-minor interval ladder
+// instead of raw chromatic semitones, so risers, countdowns and pitch
+// stairs land on notes that belong together - the "everything stays in
+// tune" behaviour of the modern fill tools, without needing key detection:
+// intervals are key-agnostic.
+inline int snapToScale (float semis) noexcept
+{
+    static constexpr int ladder[] = { -12, -10, -8, -7, -5, -3, -2, 0,
+                                      2, 3, 5, 7, 8, 10, 12 };
+    int best = ladder[0];
+    for (int v : ladder)
+        if (std::abs ((float) v - semis) < std::abs ((float) best - semis))
+            best = v;
+    return best;
+}
+
 // A TOTAL order over events - every sort of a Pattern's events must use this.
 //
 // Sorting on position alone leaves simultaneous hits (a kick and a hat on the

@@ -17,6 +17,7 @@
 #include "../Engine/MusicalScorer.h"
 #include "../Playback/PreviewPlayer.h"
 #include <map>
+#include <set>
 
 using namespace orcha;
 
@@ -1966,7 +1967,7 @@ int main (int argc, char* argv[])
     {
         GeneratorSettings s;
         s.mode = Mode::FILL;
-        s.bars = 4;   // must be forced back to 1
+        s.bars = 2;   // bars selects LENGTH in FILL: 1=half, 2=one, 4=two
         TraitsByRole tr {};
 
         juce::StringArray sigs;
@@ -2000,6 +2001,39 @@ int main (int argc, char* argv[])
                 ++lateWeighted;
         }
         check (sigs.size() >= 12, "fill bank shows real variety across seeds");
+
+        // Length semantics + the interval ladder.
+        static const std::set<int> ladder = { -12, -10, -8, -7, -5, -3, -2, 0,
+                                              2, 3, 5, 7, 8, 10, 12 };
+        int twoBarBackHeavier = 0;
+        for (int i = 0; i < 20; ++i)
+        {
+            GeneratorSettings half = s;  half.bars = 1;
+            const auto ph = PatternValidator::validate (LoopGenerator::generateV2 (
+                LoopGenerator::deriveSeed (0x4A1F, i),
+                LoopGenerator::deriveSeed (0xF1A4, i), half, tr));
+            check (ph.settings.bars == 1, "half fill still renders one bar");
+            for (const auto& e : ph.events)
+            {
+                check (e.pos >= 7.9, "half fill leaves the front half silent");
+                check (ladder.count (e.pitchSemis) > 0,
+                       "fill pitches sit on the interval ladder");
+            }
+
+            GeneratorSettings two = s;  two.bars = 4;
+            const auto pt = PatternValidator::validate (LoopGenerator::generateV2 (
+                LoopGenerator::deriveSeed (0x4A1F, i),
+                LoopGenerator::deriveSeed (0xF1A4, i), two, tr));
+            check (pt.settings.bars == 2, "two-bar fill spans two bars");
+            float bar1 = 0.0f, bar2 = 0.0f;
+            for (const auto& e : pt.events)
+                (e.pos < 16.0 ? bar1 : bar2) += e.velocity * e.velocity;
+            check (bar1 > 0.0f && bar2 > 0.0f, "two-bar fill uses both bars");
+            if (bar2 > bar1)
+                ++twoBarBackHeavier;
+        }
+        check (twoBarBackHeavier >= 16,
+               "the two-bar fill's second bar carries the gesture");
         check (lateWeighted >= 24, "fills lean into the coming downbeat");
         check (stutters > 0, "CHOPPED stutter gestures appear");
         check (reverses > 0, "CHOPPED reverse gestures appear");
