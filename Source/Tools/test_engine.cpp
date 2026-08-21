@@ -2272,7 +2272,14 @@ int main (int argc, char* argv[])
         GeneratorSettings s;
         s.mode = Mode::GROOVE;
         s.bars = 2;
-        static const std::set<int> mLadder = { 0, 2, 3, 5, 7, 8, 10, 12 };
+        // Ladder + the octave hook's +12 variants.
+        auto withOctave = [] (std::initializer_list<int> base)
+        {
+            std::set<int> out;
+            for (int v : base) { out.insert (v); out.insert (v + 12); }
+            return out;
+        };
+        const auto mLadder = withOctave ({ 0, 2, 3, 5, 7, 8, 10, 12 });
         int melodic = 0;
         for (int i = 0; i < 20; ++i)
         {
@@ -2286,14 +2293,35 @@ int main (int argc, char* argv[])
                     check (mLadder.count (e.pitchSemis) > 0,
                            "melodic pitches stay on the ladder");
                     check (! e.roll, "melodic voices carry notes, not rolls");
-                    if (std::fmod (e.pos, 16.0) < 0.01)
-                        check (e.pitchSemis == 0, "bar lines return to the root");
+                    if (e.pos < 0.01)
+                        check (e.pitchSemis == 0 || e.pitchSemis == 12,
+                               "the loop opens on the root");
                     pitches.insert (e.pitchSemis);
                 }
             if (pitches.size() >= 3)
                 ++melodic;
         }
         check (melodic >= 14, "tonal voices actually get melodies");
+
+        // The scale follows the FAMILY: an ARABIC melody walks hijaz.
+        const auto hijaz = withOctave ({ 0, 1, 4, 5, 7, 8, 11, 12 });
+        GeneratorSettings ar = s;
+        ar.family = Family::ARABIC;
+        int hijazNotes = 0;
+        for (int i = 0; i < 10; ++i)
+            for (const auto& e : PatternValidator::validate (
+                     LoopGenerator::generateV2 (
+                         LoopGenerator::deriveSeed (0xA7AB, i),
+                         LoopGenerator::deriveSeed (0xBA7A, i), ar, tr)).events)
+                if (e.role == Role::MID)
+                {
+                    check (hijaz.count (e.pitchSemis) > 0,
+                           "ARABIC melodies walk the hijaz ladder");
+                    if (e.pitchSemis == 1 || e.pitchSemis == 4
+                        || e.pitchSemis == 11)
+                        ++hijazNotes;
+                }
+        check (hijazNotes > 0, "hijaz colour notes actually appear");
 
         // The tune belongs to the motif: a reroll (new ornament seed) keeps
         // the melody, note for note.

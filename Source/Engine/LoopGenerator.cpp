@@ -1132,27 +1132,72 @@ Pattern LoopGenerator::generateV2 (juce::uint64 motifSeed, juce::uint64 ornament
         if (! tr.tonal || tr.padLike)
             continue;
         // The tune is a fixed LINE over the step grid, drawn once from the
-        // motif stream - events SAMPLE it by position. Deriving pitches from
-        // event order instead would let the ornament seed reshuffle the
-        // melody on every reroll (caught by test).
+        // motif stream - events SAMPLE it by position (event-order derivation
+        // let the ornament seed reshuffle the tune; caught by test).
+        //
+        // Second study round (riff generators + melody craft) added:
+        //  - the SCALE follows the FAMILY: hijaz for ARABIC, phrygian for
+        //    MEDITERRANEAN, pentatonic for AFRO, harmonic minor for
+        //    CINEMATIC, natural minor elsewhere - flavour without a knob
+        //  - leap-then-resolve: after a leap the line steps back the other
+        //    way, the classic rule that keeps leaps singable
+        //  - call & response across bars: odd bars end AWAY from home (the
+        //    question), even bars walk back and land on the root (the answer)
         Rng mel (motifSeed ^ (0x7071A1ull * (juce::uint64) (ri + 1)));
-        static constexpr int melLadder[] = { 0, 2, 3, 5, 7, 8, 10, 12 };
+        static constexpr int minorL[8]      = { 0, 2, 3, 5, 7, 8, 10, 12 };
+        static constexpr int hijazL[8]      = { 0, 1, 4, 5, 7, 8, 11, 12 };
+        static constexpr int phrygianL[8]   = { 0, 1, 3, 5, 7, 8, 10, 12 };
+        static constexpr int pentatonicL[8] = { 0, 3, 5, 7, 10, 12, 15, 17 };
+        static constexpr int harmonicL[8]   = { 0, 2, 3, 5, 7, 8, 11, 12 };
+        const int* melLadder =
+              settings.family == Family::ARABIC        ? hijazL
+            : settings.family == Family::MEDITERRANEAN ? phrygianL
+            : settings.family == Family::AFRO          ? pentatonicL
+            : settings.family == Family::CINEMATIC     ? harmonicL
+                                                       : minorL;
         std::array<int, 64> line {};
-        int idx = 0;
+        int idx = 0, lastMove = 0;
         for (int st = 0; st < juce::jmin (64, steps); ++st)
         {
-            if (st % 16 == 0)
-                idx = 0;                               // bar line: home
+            const int inBar = st % 16;
+            const bool answerBar = ((st / 16) % 2) == 1;
+            if (st == 0)
+                idx = 0;
+            else if (inBar == 0)
+                // A question bar OPENS away from home; an answer bar starts
+                // from where the question left off and works back.
+                idx = answerBar ? idx : juce::jlimit (0, 7, 2 + mel.pick (3));
+            else if (answerBar && inBar >= 13)
+                // The resolution: the last beat of an answer bar steps home.
+                idx = juce::jmax (0, idx - 1);
+            else if (lastMove * lastMove >= 4)
+                // Leap-then-resolve: a step back the other way, almost always.
+                idx += mel.chance (0.85f) ? (lastMove > 0 ? -1 : 1)
+                                          : (lastMove > 0 ? 1 : -1);
             else
             {
                 const float u = mel.uni();
                 if (u < 0.35f)      { /* hold the note */ }
                 else if (u < 0.78f) idx += mel.chance (0.55f) ? 1 : -1;
                 else                idx += mel.chance (0.5f) ? 2 : -2;
-                idx = juce::jlimit (0, 7, idx);
             }
+            idx = juce::jlimit (0, 7, idx);
+            lastMove = st > 0 && inBar != 0 ? idx - line[(size_t) (st - 1)] : 0;
             line[(size_t) st] = idx;
         }
+        // The answer's landing is guaranteed, not probable: an even bar's
+        // final step IS the root.
+        for (int st = 0; st < juce::jmin (64, steps); ++st)
+            if (((st / 16) % 2) == 1 && st % 16 == 15)
+                line[(size_t) st] = 0;
+
+        // Octave-hook mask, decided PER STEP in the line phase - drawing it
+        // per event would tie the draws to event order and let a reroll
+        // reshuffle the hooks (the exact trap the tests caught last time).
+        std::array<bool, 64> hook {};
+        for (int st = 0; st < juce::jmin (64, steps); ++st)
+            hook[(size_t) st] = line[(size_t) st] <= 3 && mel.chance (0.15f);
+
         for (auto& e : p.events)
         {
             if ((int) e.role != ri)
@@ -1160,6 +1205,10 @@ Pattern LoopGenerator::generateV2 (juce::uint64 motifSeed, juce::uint64 ornament
             const int st = juce::jlimit (0, juce::jmin (63, steps - 1),
                                          (int) std::floor (e.pos));
             e.pitchSemis = melLadder[line[(size_t) st]];
+            // The octave hook: a hard accent on a hook step jumps an octave -
+            // the register leap that gives a riff its identity.
+            if (e.velocity >= 0.85f && hook[(size_t) st])
+                e.pitchSemis += 12;
             if (e.gateSteps <= 0.0 || e.gateSteps > 2.0)
                 e.gateSteps = 1.5;                     // notes, not ticks
             e.roll = false;                            // runs become lines
