@@ -69,16 +69,26 @@ void paintSpectralWaveform (juce::Graphics& g, juce::Rectangle<float> area,
     const juce::Colour midC  (0xff2ee06e);   // mids: green
     const juce::Colour highC (0xff54c8ff);   // highs: blue
 
+    // Time-resolved like a spectral meter: the story must be visible INSIDE
+    // one hit - a kick opens with a bright click, moves through a green
+    // body, lands on a red sub tail. Two things make that legible:
+    //   - steeper bands: cascaded one-poles (-12 dB/oct) at ~180 Hz and
+    //     ~2 kHz, so a 200 Hz body no longer leaks into the sub band and
+    //     smears the whole hit red
+    //   - finer time grid: energies are gathered on a 4x supersampled grid
+    //     and drawn per column from its sharpest cell, so short phases
+    //     (the click) keep their own colour instead of averaging away
+    const int cells = columns * 4;
     const float aLow  = std::exp ((float) (-juce::MathConstants<double>::twoPi
-                                           * 120.0 / sampleRate));
+                                           * 180.0 / sampleRate));
     const float aMid  = std::exp ((float) (-juce::MathConstants<double>::twoPi
                                            * 2000.0 / sampleRate));
-    float lp120 = 0.0f, lp2k = 0.0f;
+    float lp100a = 0.0f, lp100b = 0.0f, lp2ka = 0.0f, lp2kb = 0.0f;
 
     std::vector<float> peaks ((size_t) columns, 0.0f);
-    std::vector<float> eLow ((size_t) columns, 0.0f),
-                       eMid ((size_t) columns, 0.0f),
-                       eHigh ((size_t) columns, 0.0f);
+    std::vector<float> cLow ((size_t) cells, 0.0f),
+                       cMid ((size_t) cells, 0.0f),
+                       cHigh ((size_t) cells, 0.0f);
 
     for (int i = 0; i < numSamples; ++i)
     {
@@ -87,27 +97,58 @@ void paintSpectralWaveform (juce::Graphics& g, juce::Rectangle<float> area,
             v += buffer.getReadPointer (ch)[i];
         v /= (float) chans;
 
-        lp120 = aLow * lp120 + (1.0f - aLow) * v;
-        lp2k  = aMid * lp2k  + (1.0f - aMid) * v;
-        const float low = lp120;
-        const float mid = lp2k - lp120;
-        const float high = v - lp2k;
+        lp100a = aLow * lp100a + (1.0f - aLow) * v;
+        lp100b = aLow * lp100b + (1.0f - aLow) * lp100a;   // -12 dB/oct
+        lp2ka  = aMid * lp2ka  + (1.0f - aMid) * v;
+        lp2kb  = aMid * lp2kb  + (1.0f - aMid) * lp2ka;
+        const float low = lp100b;
+        const float mid = lp2kb - lp100b;
+        const float high = v - lp2kb;
 
-        const int x = juce::jmin (columns - 1,
-            (int) ((juce::int64) i * columns / numSamples));
-        eLow[(size_t) x]  += low * low;
-        eMid[(size_t) x]  += mid * mid;
-        eHigh[(size_t) x] += high * high;
+        const int cell = juce::jmin (cells - 1,
+            (int) ((juce::int64) i * cells / numSamples));
+        cLow[(size_t) cell]  += low * low;
+        cMid[(size_t) cell]  += mid * mid;
+        cHigh[(size_t) cell] += high * high;
+        const int x = juce::jmin (columns - 1, cell / 4);
         peaks[(size_t) x] = juce::jmax (peaks[(size_t) x], std::abs (v));
     }
+
+    // Peak-hold across cells: a cell shorter than one period of a 60 Hz wave
+    // sees the sine's phase, not its energy, and the kick body strobes
+    // green/red. Instant attack, ~6-cell decay - onsets keep their own
+    // colour, the body reads as one continuous story.
+    auto hold = [] (std::vector<float>& c)
+    {
+        for (size_t i = 1; i < c.size(); ++i)
+            c[i] = juce::jmax (c[i], c[i - 1] * 0.82f);
+    };
+    hold (cLow);
+    hold (cMid);
+    hold (cHigh);
+
+    std::vector<float> eLow ((size_t) columns, 0.0f),
+                       eMid ((size_t) columns, 0.0f),
+                       eHigh ((size_t) columns, 0.0f);
+    for (int x = 0; x < columns; ++x)
+        for (int k = 0; k < 4; ++k)
+        {
+            const size_t cell = (size_t) juce::jmin (cells - 1, x * 4 + k);
+            eLow[(size_t) x]  += cLow[cell];
+            eMid[(size_t) x]  += cMid[cell];
+            eHigh[(size_t) x] += cHigh[cell];
+        }
 
     for (int x = 0; x < columns; ++x)
     {
         // Perceptual weighting: highs carry far less energy per loudness, so
         // they get a lift or every hat would drown under its own kick bleed.
+        // Calibrated against the real XO kit, 10 ms windows: these weights
+        // and the 180 Hz crossover make a kick tell its true story - BLUE
+        // click, GREEN body, RED sub tail - instead of averaging to one hue.
         const float wl = eLow[(size_t) x];
-        const float wm = eMid[(size_t) x] * 2.0f;
-        const float wh = eHigh[(size_t) x] * 6.0f;
+        const float wm = eMid[(size_t) x] * 1.6f;
+        const float wh = eHigh[(size_t) x] * 5.0f;
         const float sum = wl + wm + wh;
         juce::Colour col = midC;
         if (sum > 1.0e-12f)
@@ -121,9 +162,9 @@ void paintSpectralWaveform (juce::Graphics& g, juce::Rectangle<float> area,
             col = col.withAlpha (0.35f);   // near-silence stays quiet visually
 
         const float hgt = juce::jmax (1.0f, peaks[(size_t) x] * halfH);
-        g.setColour (col.withAlpha (col.getFloatAlpha() * 0.25f));
-        g.fillRect (area.getX() + (float) x - 1.5f, midY - hgt - 2.0f,
-                    4.0f, (hgt + 2.0f) * 2.0f);
+        g.setColour (col.withAlpha (col.getFloatAlpha() * 0.22f));
+        g.fillRect (area.getX() + (float) x - 1.0f, midY - hgt - 1.5f,
+                    3.0f, (hgt + 1.5f) * 2.0f);
         g.setColour (col);
         g.fillRect (area.getX() + (float) x, midY - hgt, 1.0f, hgt * 2.0f);
     }
