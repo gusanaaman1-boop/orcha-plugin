@@ -512,6 +512,9 @@ Pattern LoopGenerator::generateV2 (juce::uint64 motifSeed, juce::uint64 ornament
 
     // --- 1. skeleton + swing + lead role (motif stream, same as v1) ------------
     const auto& skel = style.skeletons[(size_t) rngM.pick ((int) style.skeletons.size())];
+    // The groove's NAME rides along: the worker appends it to the card label,
+    // so "GROOVE 04" becomes "GROOVE 04 - GARAGE SHUFFLE".
+    p.name = juce::String (skel.name).replaceCharacter ('_', ' ').toUpperCase();
     p.swing = skel.defaultSwing * (0.6 + 0.8 * rngM.uni());
     if (settings.mode == Mode::GROOVE)
         p.swing = juce::jlimit (0.0, 1.0, p.swing + 0.08 * rngM.uni());

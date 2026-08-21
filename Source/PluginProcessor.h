@@ -193,6 +193,16 @@ private:
     std::atomic<double> bpmAtomic { 120.0 };
     std::atomic<double> ppqAtomic { -1.0 };
     std::atomic<bool> playingAtomic { false };
+    // Standalone kit memory: the app remembers the last loaded sample paths
+    // in its own side file, so a lost or overwritten filterState (the app
+    // killed before saving, an accidental empty-session save) never again
+    // opens to an empty window. Message thread only.
+    static juce::File kitMemoryFile();
+    void rememberKit() const;
+    void maybeRestoreKit();
+    int  startupTicks = 0;                  // message thread
+    bool kitRestoreDone = false;            // message thread
+
     double lastRenderBpm = 0.0;             // message thread
     double lastRenderSr = 0.0;              // message thread
     bool pitchEnabled = true;               // message thread; renders honor it

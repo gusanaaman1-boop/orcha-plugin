@@ -216,6 +216,7 @@ Pattern FillBank::build (juce::uint64 motifSeed, juce::uint64 ornamentSeed,
     // voice leads when the template's role cannot articulate.
     const auto& all = bank();
     const auto& tpl = all[(size_t) rngM.pick ((int) all.size())];
+    p.name = juce::String (tpl.name).replaceCharacter ('-', ' ').toUpperCase();
 
     const float energy = settings.energy;
     const float density = settings.density;

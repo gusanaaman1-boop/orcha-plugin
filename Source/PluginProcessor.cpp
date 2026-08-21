@@ -154,6 +154,7 @@ bool OrchaAudioProcessor::anySampleLoaded() const
 void OrchaAudioProcessor::rolesChanged()
 {
     roleMap = SampleAnalyzer::assignRoles (samples);
+    rememberKit();
 
     // Existing options (including ones restored from state that could not
     // render yet) get rebuilt with the new role map.
@@ -735,7 +736,12 @@ void OrchaAudioProcessor::enqueueBuild (std::vector<int> indices,
                 }
                 existingSigs.add (pattern.signature());
             }
-            pattern.name = in.name;
+            // The card label carries the groove's identity: "FILL 03 - STUTTER
+            // EIGHT". Generated patterns arrive with the descriptor in `name`;
+            // existing/edited ones already carry their full label.
+            pattern.name = in.useExisting || pattern.name.isEmpty()
+                               ? in.name
+                               : in.name + " - " + pattern.name;
             pattern.fxReverb = in.fxReverb;
             pattern.fxDelay = in.fxDelay;
             pattern.fxPump = in.fxPump;
@@ -913,9 +919,53 @@ void OrchaAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
 
 // --- housekeeping --------------------------------------------------------------
 
+juce::File OrchaAudioProcessor::kitMemoryFile()
+{
+    return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+               .getChildFile ("ORCHA-last-kit.txt");
+}
+
+void OrchaAudioProcessor::rememberKit() const
+{
+    if (! juce::JUCEApplicationBase::isStandaloneApp())
+        return;
+    juce::String out;
+    for (int i = 0; i < numSlots; ++i)
+        if (rawSamples[(size_t) i] != nullptr
+            && rawSamples[(size_t) i]->file.existsAsFile())
+            out << i << '\t'
+                << rawSamples[(size_t) i]->file.getFullPathName() << '\n';
+    // An empty kit is remembered too: clearing every slot and quitting is a
+    // decision, and the app must not resurrect samples the user removed.
+    kitMemoryFile().replaceWithText (out);
+}
+
+void OrchaAudioProcessor::maybeRestoreKit()
+{
+    kitRestoreDone = true;
+    if (! juce::JUCEApplicationBase::isStandaloneApp() || anySampleLoaded())
+        return;
+    juce::StringArray lines;
+    kitMemoryFile().readLines (lines);
+    for (const auto& line : lines)
+    {
+        const int slot = line.upToFirstOccurrenceOf ("\t", false, false).getIntValue();
+        const juce::File f (line.fromFirstOccurrenceOf ("\t", false, false));
+        if (slot >= 0 && slot < numSlots && f.existsAsFile())
+            loadSampleAsync (slot, f);
+    }
+}
+
 void OrchaAudioProcessor::timerCallback()
 {
     preview.releaseRetired();
+
+    // ~1.5 s after construction: if the standalone came up EMPTY (its saved
+    // state was lost, or an empty session got saved over the good one), the
+    // last kit comes back on its own. A state restore that did bring samples
+    // makes this a no-op.
+    if (! kitRestoreDone && ++startupTicks >= 10)
+        maybeRestoreKit();
 
     // Host tempo or sample rate drifted from the rendered ones: rebuild the
     // audio (same patterns, same seeds) once the current batch is done. A

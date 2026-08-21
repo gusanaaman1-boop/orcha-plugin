@@ -157,13 +157,28 @@ void OptionCard::paint (juce::Graphics& g)
         g.drawText ("rendering...", wave, juce::Justification::centred);
     }
 
-    // Name.
-    g.setColour (theme::text);
-    g.setFont (theme::heading (13.0f));
-    g.drawText (name, juce::Rectangle<float> (12.0f, (float) getHeight() - 26.0f,
-                                              juce::jmax (50.0f, (float) getWidth() - 160.0f),
-                                              18.0f),
-                juce::Justification::centredLeft);
+    // Name: "DROP 01" bold, then the groove's own name small and dim -
+    // "MELODIC TECHNO", "STUTTER EIGHT" - the way a fill library labels
+    // every entry. Two sizes, one line, descriptor ellipsized when tight.
+    {
+        auto area = juce::Rectangle<float> (12.0f, (float) getHeight() - 26.0f,
+                                            juce::jmax (50.0f, (float) getWidth() - 160.0f),
+                                            18.0f);
+        const auto base = name.upToFirstOccurrenceOf (" - ", false, false);
+        const auto desc = name.fromFirstOccurrenceOf (" - ", false, false);
+        g.setColour (theme::text);
+        g.setFont (theme::heading (13.0f));
+        g.drawText (base, area, juce::Justification::centredLeft);
+        if (desc.isNotEmpty())
+        {
+            const float baseW = juce::GlyphArrangement::getStringWidth (
+                theme::heading (13.0f), base) + 8.0f;
+            g.setColour (theme::textDim);
+            g.setFont (theme::label (10.0f));
+            g.drawText (desc, area.withTrimmedLeft (baseW),
+                        juce::Justification::centredLeft);
+        }
+    }
 
     // Favorite heart.
     {
