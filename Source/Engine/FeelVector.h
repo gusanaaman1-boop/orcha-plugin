@@ -65,6 +65,12 @@ struct FeelVector
                 f.brightness = clamp01 (0.5f + 0.35f * e);
                 f.resolution = clamp01 (0.6f + 0.3f * e);   // the destination
                 break;
+            case Mode::FILL:   // one accelerating bar, everything forward
+                f.drive = clamp01 (0.6f + 0.35f * e);
+                f.tension = clamp01 (0.5f + 0.4f * e);
+                f.space = clamp01 (0.2f - 0.1f * d);
+                f.repetition = clamp01 (0.3f - 0.2f * r);
+                break;
             case Mode::GROOVE:
                 f.drive = clamp01 (0.55f + 0.25f * e);
                 f.tension = clamp01 (0.25f + 0.2f * e);
@@ -173,6 +179,12 @@ struct FeelTrajectory
                     t.tensionArc[(size_t) i] = f.tension * (0.9f + (i == 2 ? 0.25f : 0.0f));
                     t.space[(size_t) i] = 0.25f;
                     t.brightness[(size_t) i] = f.brightness;
+                    break;
+                case Mode::FILL:   // straight ramp into the next downbeat
+                    t.density[(size_t) i] = 0.6f + 0.6f * x;
+                    t.tensionArc[(size_t) i] = f.tension * (0.4f + 0.8f * x);
+                    t.space[(size_t) i] = 0.15f * (1.0f - x);
+                    t.brightness[(size_t) i] = f.brightness * (0.7f + 0.4f * x);
                     break;
             }
         }

@@ -5,7 +5,7 @@ namespace orcha
 
 GenerationStrip::GenerationStrip()
 {
-    wireToggleGroup ({ &dropButton, &breakButton, &buildButton, &grooveButton }, 101);
+    wireToggleGroup ({ &dropButton, &breakButton, &buildButton, &grooveButton, &fillButton }, 101);
     wireToggleGroup ({ &edmChip, &melodicChip, &psyChip, &urbanChip, &breaksChip,
                        &arabicChip, &medChip, &afroChip, &cinematicChip, &hybridChip }, 102);
     wireToggleGroup ({ &bars1, &bars2, &bars4 }, 103);
@@ -73,8 +73,9 @@ void GenerationStrip::wireToggleGroup (std::vector<juce::TextButton*> group, int
 
 void GenerationStrip::setSettings (const GeneratorSettings& s)
 {
-    juce::TextButton* modes[] = { &dropButton, &breakButton, &buildButton, &grooveButton };
-    modes[(int) s.mode]->setToggleState (true, juce::dontSendNotification);
+    juce::TextButton* modes[] = { &dropButton, &breakButton, &buildButton,
+                                  &grooveButton, &fillButton };
+    modes[juce::jlimit (0, 4, (int) s.mode)]->setToggleState (true, juce::dontSendNotification);
     // Indexed by the Family enum order, not the visual order.
     juce::TextButton* families[] = { &edmChip, &melodicChip, &psyChip, &arabicChip,
                                      &medChip, &afroChip, &cinematicChip, &hybridChip,
@@ -92,7 +93,8 @@ GeneratorSettings GenerationStrip::getSettings() const
     GeneratorSettings s;
     s.mode = breakButton.getToggleState() ? Mode::BREAK
            : buildButton.getToggleState() ? Mode::BUILD
-           : grooveButton.getToggleState() ? Mode::GROOVE : Mode::DROP;
+           : grooveButton.getToggleState() ? Mode::GROOVE
+           : fillButton.getToggleState() ? Mode::FILL : Mode::DROP;
     s.family = melodicChip.getToggleState() ? Family::MELODIC_TECHNO
              : psyChip.getToggleState() ? Family::PSYTRANCE
              : urbanChip.getToggleState() ? Family::URBAN
@@ -140,9 +142,9 @@ void GenerationStrip::resized()
 {
     auto area = getLocalBounds().reduced (10, 8);
 
-    auto modeArea = area.removeFromLeft (juce::jmax (230, area.getWidth() * 21 / 100));
-    const int modeW = modeArea.getWidth() / 4;
-    for (auto* b : { &dropButton, &breakButton, &buildButton, &grooveButton })
+    auto modeArea = area.removeFromLeft (juce::jmax (275, area.getWidth() * 25 / 100));
+    const int modeW = modeArea.getWidth() / 5;
+    for (auto* b : { &dropButton, &breakButton, &buildButton, &grooveButton, &fillButton })
         b->setBounds (modeArea.removeFromLeft (modeW).reduced (2, 4));
 
     // Eight family chips in two rows of four, widths proportional to their

@@ -7,7 +7,7 @@
 namespace orcha
 {
 
-enum class Mode   { DROP = 0, BREAK, BUILD, GROOVE };
+enum class Mode   { DROP = 0, BREAK, BUILD, GROOVE, FILL };
 enum class Family { EDM = 0, MELODIC_TECHNO, PSYTRANCE, ARABIC, MEDITERRANEAN,
                     AFRO, CINEMATIC, HYBRID, URBAN, BREAKS };
 
@@ -19,6 +19,7 @@ inline const char* modeName (Mode m)
         case Mode::BREAK:  return "BREAK";
         case Mode::BUILD:  return "BUILD";
         case Mode::GROOVE: return "GROOVE";
+        case Mode::FILL:   return "FILL";
     }
     return "DROP";
 }

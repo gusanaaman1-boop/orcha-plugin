@@ -57,6 +57,10 @@ PhrasePlan PhrasePlanner::plan (Mode mode, int bars, juce::uint64 motifSeed)
                 p.roles = { PhraseRole::Establish, PhraseRole::Develop,
                             PhraseRole::Contrast, PhraseRole::Turnaround };
                 break;
+            case Mode::FILL:
+                p.roles = { PhraseRole::Establish, PhraseRole::Develop,
+                            PhraseRole::Accelerate, PhraseRole::Resolve };
+                break;
         }
     }
     else if (bars == 2)
@@ -75,6 +79,9 @@ PhrasePlan PhrasePlanner::plan (Mode mode, int bars, juce::uint64 motifSeed)
                 break;
             case Mode::GROOVE:
                 p.roles = { PhraseRole::Establish, PhraseRole::Turnaround };
+                break;
+            case Mode::FILL:
+                p.roles = { PhraseRole::Accelerate, PhraseRole::Resolve };
                 break;
         }
     }
@@ -101,6 +108,10 @@ PhrasePlan PhrasePlanner::plan (Mode mode, int bars, juce::uint64 motifSeed)
             case Mode::GROOVE:
                 p.roles = { PhraseRole::Establish, PhraseRole::Lock,
                             PhraseRole::Develop, PhraseRole::Turnaround };
+                break;
+            case Mode::FILL:
+                p.roles = { PhraseRole::Establish, PhraseRole::Develop,
+                            PhraseRole::Accelerate, PhraseRole::Resolve };
                 break;
         }
     }

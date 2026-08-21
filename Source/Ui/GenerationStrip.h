@@ -32,7 +32,8 @@ private:
     void changed() { if (onSettingsChanged) onSettingsChanged(); }
 
     juce::TextButton dropButton { "DROP" }, breakButton { "BREAK" },
-                     buildButton { "BUILD" }, grooveButton { "GROOVE" };
+                     buildButton { "BUILD" }, grooveButton { "GROOVE" },
+                     fillButton { "FILL" };
     // Two rows of five chips - ten families and the strip stays one strip.
     juce::TextButton edmChip { "EDM" }, melodicChip { "MELODIC TECHNO" },
                      psyChip { "PSYTRANCE" }, urbanChip { "URBAN" },

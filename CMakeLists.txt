@@ -6,7 +6,7 @@ if(APPLE)
     set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "" FORCE)
 endif()
 
-project(Orcha VERSION 0.16.1 LANGUAGES C CXX)
+project(Orcha VERSION 0.17.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -113,7 +113,8 @@ set(ORCHA_ENGINE_SOURCES
     Source/Engine/SampleTransform.cpp
     Source/Engine/PhrasePlanner.cpp
     Source/Engine/Motif.cpp
-    Source/Engine/MusicalScorer.cpp)
+    Source/Engine/MusicalScorer.cpp
+    Source/Engine/FillBank.cpp)
 
 set(ORCHA_PLUGIN_SOURCES
     ${ORCHA_ENGINE_SOURCES}

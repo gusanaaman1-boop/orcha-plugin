@@ -1958,6 +1958,86 @@ int main (int argc, char* argv[])
         check (! timingIsMeaningful || ms < 4000.0, "12-card render inside budget");
     }
 
+    // === FILL mode: the curated one-bar fill bank ================================
+    // Learned from studying fill-focused tools (Dr. Fill and friends): a
+    // dedicated fill vocabulary in two families - PLAYED (drummer moves) and
+    // CHOPPED (producer edits) - always one bar, always from the user's own
+    // samples, always leaning into the next downbeat.
+    {
+        GeneratorSettings s;
+        s.mode = Mode::FILL;
+        s.bars = 4;   // must be forced back to 1
+        TraitsByRole tr {};
+
+        juce::StringArray sigs;
+        int lateWeighted = 0, stutters = 0, reverses = 0, pitchMoves = 0;
+        for (int i = 0; i < 40; ++i)
+        {
+            const auto p = PatternValidator::validate (LoopGenerator::generateV2 (
+                LoopGenerator::deriveSeed (0xF177, i),
+                LoopGenerator::deriveSeed (0x771F, i), s, tr));
+            check (p.settings.bars == 1, "a fill is always one bar");
+            check (p.settings.mode == Mode::FILL, "fill keeps its mode");
+            check (! p.events.empty(), "fill has content");
+            sigs.addIfNotAlreadyThere (p.signature());
+
+            float front = 0.0f, back = 0.0f;
+            int run = 0;
+            double lastPos = -9.0;
+            Role lastRole = Role::AUTO;
+            for (const auto& e : p.events)
+            {
+                (e.pos < 8.0 ? front : back) += e.velocity * e.velocity;
+                if (e.reverse) ++reverses;
+                if (e.pitchSemis != 0) ++pitchMoves;
+                if (e.role == lastRole && e.pos - lastPos <= 0.51)
+                    { if (++run >= 3) ++stutters; }
+                else run = 0;
+                lastPos = e.pos;
+                lastRole = e.role;
+            }
+            if (back >= front)
+                ++lateWeighted;
+        }
+        check (sigs.size() >= 12, "fill bank shows real variety across seeds");
+        check (lateWeighted >= 24, "fills lean into the coming downbeat");
+        check (stutters > 0, "CHOPPED stutter gestures appear");
+        check (reverses > 0, "CHOPPED reverse gestures appear");
+        check (pitchMoves > 0, "pitch gestures appear");
+
+        // Reroll semantics hold: same motif = same template (same skeleton of
+        // the fill), different ornament = another take of it.
+        const auto a = LoopGenerator::generateV2 (
+            LoopGenerator::deriveSeed (0xF177, 3),
+            LoopGenerator::deriveSeed (0x1111, 0), s, tr);
+        const auto b = LoopGenerator::generateV2 (
+            LoopGenerator::deriveSeed (0xF177, 3),
+            LoopGenerator::deriveSeed (0x2222, 0), s, tr);
+        const auto c = LoopGenerator::generateV2 (
+            LoopGenerator::deriveSeed (0xF177, 3),
+            LoopGenerator::deriveSeed (0x1111, 0), s, tr);
+        check (a.signature() == c.signature(), "fill generation is deterministic");
+        juce::ignoreUnused (b);   // takes may or may not differ in signature
+
+        // Macros reach the fills too.
+        GeneratorSettings lo = s, hi = s;
+        lo.energy = 0.05f; hi.energy = 0.95f;
+        double vLo = 0, nLo = 0, vHi = 0, nHi = 0;
+        for (int i = 0; i < 20; ++i)
+        {
+            for (const auto& e : LoopGenerator::generateV2 (
+                     LoopGenerator::deriveSeed (0xE7, i),
+                     LoopGenerator::deriveSeed (0x7E, i), lo, tr).events)
+                { vLo += e.velocity; ++nLo; }
+            for (const auto& e : LoopGenerator::generateV2 (
+                     LoopGenerator::deriveSeed (0xE7, i),
+                     LoopGenerator::deriveSeed (0x7E, i), hi, tr).events)
+                { vHi += e.velocity; ++nHi; }
+        }
+        check (vHi / juce::jmax (1.0, nHi) - vLo / juce::jmax (1.0, nLo) > 0.12,
+               "ENERGY is felt in fills");
+    }
+
     // === the macro knobs must be FELT ===========================================
     // User report, v0.15.1: "I don't feel the knobs doing anything." Measured
     // and confirmed - the whole ENERGY range moved mean velocity ~2 dB and

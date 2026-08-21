@@ -4,6 +4,7 @@
 #include "FeelVector.h"
 #include "Motif.h"
 #include "SilencePlanner.h"
+#include "FillBank.h"
 #include <algorithm>
 
 namespace orcha
@@ -433,6 +434,12 @@ Pattern LoopGenerator::generateV2 (juce::uint64 motifSeed, juce::uint64 ornament
                                    const TraitsByRole& traits,
                                    Destination destination)
 {
+    // FILL is its own vocabulary: one authored bar from the curated bank,
+    // not a phrase-planned loop. Destinations do not apply - a fill IS the
+    // transition.
+    if (settings.mode == Mode::FILL)
+        return FillBank::build (motifSeed, ornamentSeed, settings, traits);
+
     Pattern p;
     p.seed = motifSeed;
     p.ornamentSeed = ornamentSeed;

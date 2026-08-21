@@ -25,6 +25,8 @@ inline SectionProfile sectionProfile (Mode m)
         case Mode::BREAK:  return { 0.32f, 0.20f, 0.35f, 0.10f, 0.55f, false, true };
         case Mode::BUILD:  return { 0.55f, 0.30f, 0.55f, 0.85f, 0.10f, true,  false };
         case Mode::GROOVE: return { 0.55f, 0.30f, 0.45f, 0.20f, 0.15f, false, false };
+        // FILL: one authored bar; density mid, fills ARE the content.
+        case Mode::FILL:   return { 0.50f, 0.30f, 0.50f, 0.60f, 0.20f, false, false };
     }
     return { 0.55f, 0.3f, 0.45f, 0.2f, 0.15f, false, false };
 }
