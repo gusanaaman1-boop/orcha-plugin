@@ -36,11 +36,11 @@ void neonRect (juce::Graphics&, juce::Rectangle<float> r, float corner,
 void neonPath (juce::Graphics&, const juce::Path&, juce::Colour colour,
                float strength = 1.0f);
 
-// Frequency-coloured waveform, the way the modern fill tools paint samples:
-// deep brown for sub, lightening through orange toward 100-400 Hz, bright
-// yellow for upper mids, pale blue-white for real highs. Column colour comes
-// from the zero-crossing rate of that column's samples - cheap, and honest
-// enough for a display.
+// Frequency-coloured waveform in the convention every DJ deck taught the
+// world: BASS red, MIDS green, HIGHS blue, mixes blending in between.
+// Column colour comes from real three-band energy (one-pole crossovers at
+// ~120 Hz and ~2 kHz), not zero-crossing rate - ZCR's noise bias painted a
+// 200 Hz snare body brown, which is exactly the wrong story.
 void paintSpectralWaveform (juce::Graphics&, juce::Rectangle<float> area,
                             const juce::AudioBuffer<float>& buffer,
                             double sampleRate);

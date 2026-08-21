@@ -60,53 +60,67 @@ void paintSpectralWaveform (juce::Graphics& g, juce::Rectangle<float> area,
     const float halfH = area.getHeight() * 0.5f;
     const int chans = buffer.getNumChannels();
 
-    // Log-frequency colour stops, matched to how the ear groups the bands.
-    struct Stop { double hz; juce::Colour c; };
-    static const Stop stops[] = {
-        {    40.0, juce::Colour (0xff3a2314) },   // sub: deep brown
-        {   100.0, juce::Colour (0xff8a5a2a) },   // low: lighter brown
-        {   400.0, juce::Colour (0xffe0902f) },   // low-mid: orange
-        {  1500.0, juce::Colour (0xfff2c94c) },   // mid: yellow
-        {  4000.0, juce::Colour (0xffefe9c0) },   // high: pale sand
-        { 10000.0, juce::Colour (0xffcfe6ff) } }; // air: blue-white
-    auto colourForHz = [] (double hz)
+    // The colour map everyone already knows, from the DJ decks: BASS is red,
+    // MIDS are green, HIGHS are blue, and mixed content blends (kick under a
+    // hat reads purple). Measured as real band ENERGY through one-pole
+    // filters - not zero-crossing rate, whose noise bias painted a snare
+    // body brown. Crossovers ~120 Hz and ~2 kHz.
+    const juce::Colour lowC  (0xffff5347);   // bass: red
+    const juce::Colour midC  (0xff2ee06e);   // mids: green
+    const juce::Colour highC (0xff54c8ff);   // highs: blue
+
+    const float aLow  = std::exp ((float) (-juce::MathConstants<double>::twoPi
+                                           * 120.0 / sampleRate));
+    const float aMid  = std::exp ((float) (-juce::MathConstants<double>::twoPi
+                                           * 2000.0 / sampleRate));
+    float lp120 = 0.0f, lp2k = 0.0f;
+
+    std::vector<float> peaks ((size_t) columns, 0.0f);
+    std::vector<float> eLow ((size_t) columns, 0.0f),
+                       eMid ((size_t) columns, 0.0f),
+                       eHigh ((size_t) columns, 0.0f);
+
+    for (int i = 0; i < numSamples; ++i)
     {
-        hz = juce::jlimit (40.0, 10000.0, hz);
-        for (int i = 1; i < 6; ++i)
-            if (hz <= stops[i].hz)
-            {
-                const double t01 = (std::log (hz) - std::log (stops[i - 1].hz))
-                                 / (std::log (stops[i].hz) - std::log (stops[i - 1].hz));
-                return stops[i - 1].c.interpolatedWith (stops[i].c, (float) t01);
-            }
-        return stops[5].c;
-    };
+        float v = 0.0f;
+        for (int ch = 0; ch < chans; ++ch)
+            v += buffer.getReadPointer (ch)[i];
+        v /= (float) chans;
+
+        lp120 = aLow * lp120 + (1.0f - aLow) * v;
+        lp2k  = aMid * lp2k  + (1.0f - aMid) * v;
+        const float low = lp120;
+        const float mid = lp2k - lp120;
+        const float high = v - lp2k;
+
+        const int x = juce::jmin (columns - 1,
+            (int) ((juce::int64) i * columns / numSamples));
+        eLow[(size_t) x]  += low * low;
+        eMid[(size_t) x]  += mid * mid;
+        eHigh[(size_t) x] += high * high;
+        peaks[(size_t) x] = juce::jmax (peaks[(size_t) x], std::abs (v));
+    }
 
     for (int x = 0; x < columns; ++x)
     {
-        const int start = (int) ((juce::int64) x * numSamples / columns);
-        const int end = juce::jmax (start + 2,
-            (int) ((juce::int64) (x + 1) * numSamples / columns));
-        float peak = 0.0f;
-        int crossings = 0;
-        float prev = 0.0f;
-        for (int i = start; i < juce::jmin (end, numSamples); ++i)
+        // Perceptual weighting: highs carry far less energy per loudness, so
+        // they get a lift or every hat would drown under its own kick bleed.
+        const float wl = eLow[(size_t) x];
+        const float wm = eMid[(size_t) x] * 2.0f;
+        const float wh = eHigh[(size_t) x] * 6.0f;
+        const float sum = wl + wm + wh;
+        juce::Colour col = midC;
+        if (sum > 1.0e-12f)
         {
-            float v = 0.0f;
-            for (int ch = 0; ch < chans; ++ch)
-                v += buffer.getReadPointer (ch)[i];
-            peak = juce::jmax (peak, std::abs (v) / (float) chans);
-            if (i > start && (v > 0.0f) != (prev > 0.0f))
-                ++crossings;
-            prev = v;
+            const float r = (lowC.getFloatRed()   * wl + midC.getFloatRed()   * wm + highC.getFloatRed()   * wh) / sum;
+            const float gr = (lowC.getFloatGreen() * wl + midC.getFloatGreen() * wm + highC.getFloatGreen() * wh) / sum;
+            const float b = (lowC.getFloatBlue()  * wl + midC.getFloatBlue()  * wm + highC.getFloatBlue()  * wh) / sum;
+            col = juce::Colour::fromFloatRGBA (r, gr, b, 1.0f);
         }
-        const int len = juce::jmax (2, juce::jmin (end, numSamples) - start);
-        const double hz = 0.5 * (double) crossings * sampleRate / (double) len;
-        auto col = colourForHz (hz);
-        if (peak < 0.02f)
+        if (peaks[(size_t) x] < 0.02f)
             col = col.withAlpha (0.35f);   // near-silence stays quiet visually
 
-        const float hgt = juce::jmax (1.0f, peak * halfH);
+        const float hgt = juce::jmax (1.0f, peaks[(size_t) x] * halfH);
         g.setColour (col.withAlpha (col.getFloatAlpha() * 0.25f));
         g.fillRect (area.getX() + (float) x - 1.5f, midY - hgt - 2.0f,
                     4.0f, (hgt + 2.0f) * 2.0f);
