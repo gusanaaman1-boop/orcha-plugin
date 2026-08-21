@@ -132,9 +132,13 @@ void OptionCard::paint (juce::Graphics& g)
         {
             waveImage = juce::Image (juce::Image::ARGB, w * 2, h * 2, true);
             juce::Graphics ig (waveImage);
-            theme::paintWaveform (ig, { 0.0f, 0.0f, (float) w * 2, (float) h * 2 },
-                                  loop->buffer,
-                                  theme::waveColour (index).withAlpha (0.95f));
+            // Frequency IS the colour, exactly like the sample cards: kick
+            // hits read brown, snares yellow, hats blue-white - so a loop's
+            // structure is legible at a glance. The card's identity colour
+            // stays on the frame and the playing glow.
+            theme::paintSpectralWaveform (ig,
+                { 0.0f, 0.0f, (float) w * 2, (float) h * 2 },
+                loop->buffer, loop->sampleRate);
         }
         g.drawImage (waveImage, wave);
         if (playing)

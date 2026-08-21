@@ -18,6 +18,7 @@ struct PreviewPlayer
         using Ptr = juce::ReferenceCountedObjectPtr<Loop>;
         juce::AudioBuffer<float> buffer;
         double bpm = 120.0;
+        double sampleRate = 48000.0;   // the rate `buffer` was rendered at
         int bars = 1;
         int optionIndex = -1;
     };

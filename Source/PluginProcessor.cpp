@@ -749,6 +749,7 @@ void OrchaAudioProcessor::enqueueBuild (std::vector<int> indices,
             auto loop = PreviewPlayer::Loop::Ptr (new PreviewPlayer::Loop());
             loop->buffer = LoopRenderer::render (pattern, ctx);
             loop->bpm = ctx.bpm;
+            loop->sampleRate = ctx.sampleRate;
             loop->bars = pattern.settings.bars;
             loop->optionIndex = in.index;
             const auto wav = RenderCache::write (loop->buffer, pattern, ctx.bpm,

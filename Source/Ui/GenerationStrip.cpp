@@ -166,7 +166,10 @@ void GenerationStrip::resized()
 {
     auto area = getLocalBounds().reduced (10, 8);
 
-    auto modeArea = area.removeFromLeft (juce::jmax (275, area.getWidth() * 25 / 100));
+    // Five mode buttons squeezed the three macro knobs down to ~28 px and
+    // they effectively VANISHED (user report). Every block now has a floor,
+    // and the knobs' floor is non-negotiable: 144 px for the three of them.
+    auto modeArea = area.removeFromLeft (juce::jmax (260, area.getWidth() * 24 / 100));
     const int modeW = modeArea.getWidth() / 5;
     for (auto* b : { &dropButton, &breakButton, &buildButton, &grooveButton, &fillButton })
         b->setBounds (modeArea.removeFromLeft (modeW).reduced (2, 4));
@@ -174,7 +177,7 @@ void GenerationStrip::resized()
     // Eight family chips in two rows of four, widths proportional to their
     // labels so MEDITERRANEAN reads while EDM stays compact.
     area.removeFromLeft (6);
-    auto chipArea = area.removeFromLeft (juce::jmax (330, area.getWidth() * 40 / 100));
+    auto chipArea = area.removeFromLeft (juce::jmax (300, area.getWidth() * 36 / 100));
     juce::TextButton* chipRows[2][5] = {
         { &edmChip, &melodicChip, &psyChip, &urbanChip, &breaksChip },
         { &arabicChip, &medChip, &afroChip, &cinematicChip, &hybridChip } };
@@ -194,12 +197,12 @@ void GenerationStrip::resized()
         }
     }
 
-    auto generateArea = area.removeFromRight (juce::jmax (160, area.getWidth() * 26 / 100));
-    setButton.setBounds (generateArea.removeFromRight (46).reduced (2, 8));
+    auto generateArea = area.removeFromRight (juce::jmax (150, area.getWidth() * 24 / 100));
+    setButton.setBounds (generateArea.removeFromRight (44).reduced (2, 8));
     generateButton.setBounds (generateArea.reduced (4, 2));
 
-    pitchButton.setBounds (area.removeFromRight (56).reduced (2, 8));
-    auto barsArea = area.removeFromRight (168);
+    pitchButton.setBounds (area.removeFromRight (52).reduced (2, 8));
+    auto barsArea = area.removeFromRight (150);
     const int barW = barsArea.getWidth() / 3;
     for (auto* b : { &bars1, &bars2, &bars4 })
         b->setBounds (barsArea.removeFromLeft (barW).reduced (2, 8));
