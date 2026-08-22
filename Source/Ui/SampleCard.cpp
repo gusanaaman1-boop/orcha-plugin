@@ -177,7 +177,14 @@ void SampleCard::mouseUp (const juce::MouseEvent& e)
         return;
     }
     if (sample == nullptr && ! loading)
-        openChooser();
+    {
+        // The internal library browser - dragging from MediaBay cannot hand
+        // over a real path, so ORCHA brings its own crate.
+        if (onBrowse)
+            onBrowse();
+        else
+            openChooser();
+    }
 }
 
 void SampleCard::mouseMove (const juce::MouseEvent& e)

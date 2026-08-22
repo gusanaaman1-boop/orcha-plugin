@@ -32,6 +32,12 @@ OrchaAudioProcessorEditor::OrchaAudioProcessorEditor (OrchaAudioProcessor& p)
             samplePanel.openFor (i);
         };
         card->onSliceAsKit = [this, i] { processor.sliceAsKit (i); };
+        card->onBrowse = [this, i]
+        {
+            editPanel.close();
+            samplePanel.close();
+            sampleBrowser.openFor (i);
+        };
         addAndMakeVisible (*card);
         sampleCards[(size_t) i] = std::move (card);
     }
@@ -72,6 +78,11 @@ OrchaAudioProcessorEditor::OrchaAudioProcessorEditor (OrchaAudioProcessor& p)
     }
     addChildComponent (editPanel);
     addChildComponent (samplePanel);
+    sampleBrowser.onPick = [this] (int slot, const juce::File& f)
+    {
+        processor.loadSampleAsync (slot, f);
+    };
+    addChildComponent (sampleBrowser);
 
     generateMoreButton.onClick = [this]
     {
@@ -323,6 +334,7 @@ void OrchaAudioProcessorEditor::resized()
     auto grid = area.reduced (12, 2);
     editPanel.setBounds (grid);         // the step editor covers the grid
     samplePanel.setBounds (grid);       // so does the sample cutting room
+    sampleBrowser.setBounds (grid);     // and the library browser
     const int cols = 4, rows = 3;
     const int w = grid.getWidth() / cols, h = grid.getHeight() / rows;
     for (int i = 0; i < OrchaAudioProcessor::numOptions; ++i)

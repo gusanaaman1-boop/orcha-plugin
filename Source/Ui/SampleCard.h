@@ -20,6 +20,7 @@ public:
     std::function<void (Role)> onRoleChange;
     std::function<void (SampleTransform::Settings)> onTransformChange;
     std::function<void()> onOpenEditor;   // click on the waveform
+    std::function<void()> onBrowse;       // empty card click: the library
     std::function<void()> onSliceAsKit;   // Phase E: split a loop into a kit
     void setKitPossible (bool possible) { kitButton.setVisible (possible); }
 

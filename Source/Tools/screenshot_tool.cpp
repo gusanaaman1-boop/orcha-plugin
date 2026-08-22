@@ -104,6 +104,43 @@ int main (int argc, char* argv[])
             pumpUntil ([] { return false; }, 200);
         }
 
+        // --- the internal sample browser: open, list, pick ---------------------
+        if (auto* orchaEditor = dynamic_cast<OrchaAudioProcessorEditor*> (editor.get()))
+        {
+            const auto lib = juce::File::getSpecialLocation (
+                juce::File::tempDirectory).getChildFile ("orcha-library");
+            lib.getChildFile ("kicks").createDirectory();
+            juce::File (juce::String (argv[2]))
+                .copyFileTo (lib.getChildFile ("kicks").getChildFile ("library-kick.wav"));
+            orchaEditor->browser().setRoot (lib, false);
+            orchaEditor->openBrowserFor (1);
+            pumpUntil ([] { return false; }, 300);
+            shoot ("06-browser.png");
+
+            const auto before = processor->getSample (1)->file.getFileName();
+            orchaEditor->browser().pickFile (
+                lib.getChildFile ("kicks").getChildFile ("library-kick.wav"));
+            pumpUntil ([&]
+            {
+                return processor->getSample (1) != nullptr
+                    && processor->getSample (1)->file.getFileName() == "library-kick.wav";
+            }, 15000);
+            const bool picked = processor->getSample (1) != nullptr
+                && processor->getSample (1)->file.getFileName() == "library-kick.wav";
+            std::cout << (picked ? "BROWSER OK" : "BROWSER FAILED") << "\n";
+            if (! picked)
+                return 1;
+            juce::ignoreUnused (before);
+            // Put the original snare back so later sections see the real kit.
+            processor->loadSampleAsync (1, juce::File (juce::String (argv[3])));
+            pumpUntil ([&]
+            {
+                return processor->getSample (1) != nullptr
+                    && processor->getSample (1)->file.getFileName() != "library-kick.wav";
+            }, 15000);
+            lib.deleteRecursively();
+        }
+
         int failuresEarly = 0;
         // --- regenerate must visibly change the card (the DROP 02 bug) ---------
         for (int idx : { 1, 5 })
